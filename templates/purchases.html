@@ -21,6 +21,7 @@
                             <th>Invoice #</th>
                             <th>Project</th>
                             <th>Vendor</th>
+                            <th>Material Category</th>
                             <th>Total Amount</th>
                             <th>Type</th>
                             <th>Date</th>
@@ -61,6 +62,13 @@
                             <option value="">-- Select Vendor --</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Material Category *</label>
+                    <input type="text" id="purchase-subcategory" class="form-control"
+                        placeholder="e.g., Steel, Cement, Electrical, Bricks" required>
+                    <small class="text-secondary">Specify the type of material being purchased</small>
                 </div>
 
                 <div class="grid grid-2">
@@ -146,7 +154,7 @@
         const tbody = document.getElementById('purchases-tbody');
 
         if (purchases.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No purchases found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">No purchases found</td></tr>';
             return;
         }
 
@@ -158,6 +166,7 @@
                 <td><strong>${p.invoice_number}</strong></td>
                 <td>${project ? project.name : 'Unknown'}</td>
                 <td>${vendor ? vendor.name : 'Unknown'}</td>
+                <td><span class="badge">${p.subcategory || 'N/A'}</span></td>
                 <td><strong>${formatCurrency(p.total_amount)}</strong></td>
                 <td><span class="badge">${p.payment_type}</span></td>
                 <td>${formatDate(p.invoice_date)}</td>
@@ -239,6 +248,7 @@
         const data = {
             project_id: parseInt(document.getElementById('purchase-project').value),
             vendor_id: parseInt(document.getElementById('purchase-vendor').value),
+            subcategory: document.getElementById('purchase-subcategory').value,
             invoice_number: document.getElementById('purchase-invoice').value,
             invoice_date: document.getElementById('purchase-date').value,
             total_amount: totalAmount,

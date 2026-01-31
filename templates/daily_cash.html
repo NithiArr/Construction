@@ -10,7 +10,7 @@
     <!-- Filters -->
     <div class="card mb-3">
         <div class="card-body">
-            <div class="grid grid-2">
+            <div class="grid grid-3" style="gap: 1rem;">
                 <div class="form-group">
                     <label class="form-label">Select Project</label>
                     <select id="project-select" class="form-control">
@@ -19,12 +19,23 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Select Date</label>
-                    <input type="date" id="date-select" class="form-control" value="">
+                    <label class="form-label">From Date</label>
+                    <input type="date" id="from-date" class="form-control" value="">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">To Date</label>
+                    <input type="date" id="to-date" class="form-control" value="">
                 </div>
             </div>
 
-            <button class="btn btn-primary" onclick="loadDailyCash()">Load Balance</button>
+            <div class="flex gap-2 mt-2" style="flex-wrap: wrap;">
+                <button class="btn btn-sm btn-secondary" onclick="setDateRange(7)">Last 7 Days</button>
+                <button class="btn btn-sm btn-secondary" onclick="setDateRange(30)">Last 30 Days</button>
+                <button class="btn btn-sm btn-secondary" onclick="setCurrentMonth()">This Month</button>
+                <button class="btn btn-sm btn-secondary" onclick="setLastMonth()">Last Month</button>
+                <button class="btn btn-primary" onclick="loadDailyCash()">Load Balance</button>
+            </div>
         </div>
     </div>
 
@@ -32,22 +43,22 @@
     <div id="balance-display" style="display: none;">
         <div class="grid grid-2 mb-3">
             <div class="card">
-                <h4 class="mb-2">💵 Daily Balance Tracker</h4>
+                <h4 class="mb-2">💵 Balance Tracker</h4>
                 <table class="w-full">
                     <tr>
                         <td><strong>Opening Balance:</strong></td>
                         <td id="opening-balance" class="text-right">₹0.00</td>
                     </tr>
                     <tr style="background: rgba(16, 185, 129, 0.1);">
-                        <td><strong>Client Receipts (Today):</strong></td>
+                        <td><strong>Client Receipts (Period):</strong></td>
                         <td id="client-receipts" class="text-right" style="color: var(--success);">₹0.00</td>
                     </tr>
                     <tr style="background: rgba(239, 68, 68, 0.1);">
-                        <td><strong>Payments Made (Today):</strong></td>
+                        <td><strong>Payments Made (Period):</strong></td>
                         <td id="vendor-payments" class="text-right" style="color: var(--danger);">₹0.00</td>
                     </tr>
                     <tr style="background: rgba(239, 68, 68, 0.1);">
-                        <td><strong>Expenses (Today):</strong></td>
+                        <td><strong>Expenses (Period):</strong></td>
                         <td id="expenses" class="text-right" style="color: var(--danger);">₹0.00</td>
                     </tr>
                     <tr style="background: var(--bg-tertiary);">
@@ -110,18 +121,60 @@
         }
     }
 
-    // Load daily cash balance
+    // Helper function to format date as YYYY-MM-DD without timezone issues
+    function formatDateLocal(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    // Set date range helper functions
+    function setDateRange(days) {
+        const toDate = new Date();
+        const fromDate = new Date();
+        fromDate.setDate(toDate.getDate() - days);
+
+        document.getElementById('from-date').value = formatDateLocal(fromDate);
+        document.getElementById('to-date').value = formatDateLocal(toDate);
+    }
+
+    function setCurrentMonth() {
+        const now = new Date();
+        const fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        const toDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        document.getElementById('from-date').value = formatDateLocal(fromDate);
+        document.getElementById('to-date').value = formatDateLocal(toDate);
+    }
+
+    function setLastMonth() {
+        const now = new Date();
+        const fromDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const toDate = new Date(now.getFullYear(), now.getMonth(), 0);
+
+        document.getElementById('from-date').value = formatDateLocal(fromDate);
+        document.getElementById('to-date').value = formatDateLocal(toDate);
+    }
+
+    // Load cash balance for date range
     async function loadDailyCash() {
         const projectId = document.getElementById('project-select').value;
-        const date = document.getElementById('date-select').value;
+        const fromDate = document.getElementById('from-date').value;
+        const toDate = document.getElementById('to-date').value;
 
-        if (!projectId || !date) {
-            alert('Please select both project and date');
+        if (!projectId || !fromDate || !toDate) {
+            alert('Please select project and date range');
+            return;
+        }
+
+        if (new Date(fromDate) > new Date(toDate)) {
+            alert('From date must be before to date');
             return;
         }
 
         try {
-            const response = await fetch(`/dashboard/api/daily-cash-balance?project_id=${projectId}&date=${date}`);
+            const response = await fetch(`/dashboard/api/daily-cash-balance?project_id=${projectId}&from_date=${fromDate}&to_date=${toDate}`);
             const data = await response.json();
 
             // Update balance tracker
@@ -134,7 +187,7 @@
             // Update transactions
             const tbody = document.getElementById('transactions-tbody');
             if (data.transactions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3" class="text-center">No transactions on this date</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center">No transactions in this period</td></tr>';
             } else {
                 tbody.innerHTML = data.transactions.map(t => {
                     let type = '';
@@ -142,13 +195,13 @@
 
                     if (t.type === 'client_payment') {
                         type = '💵 Client Payment';
-                        details = `${t.payment_mode} - ${t.reference || 'N/A'}`;
+                        details = `${t.date} - ${t.payment_mode} - ${t.reference || 'N/A'}`;
                     } else if (t.type === 'expense') {
                         type = '💳 Expense';
-                        details = `${t.category} - ${t.payment_mode}`;
+                        details = `${t.date} - ${t.category} - ${t.payment_mode}`;
                     } else if (t.type === 'vendor_payment') {
                         type = '💸 Vendor Payment';
-                        details = `${t.vendor_name} - ${t.payment_mode}`;
+                        details = `${t.date} - ${t.vendor_name} - ${t.payment_mode}`;
                     }
 
                     return `
@@ -163,18 +216,36 @@
 
             document.getElementById('balance-display').style.display = 'block';
         } catch (error) {
-            console.error('Error loading daily cash:', error);
+            console.error('Error loading cash balance:', error);
             alert('Error loading data');
         }
     }
 
     // Export functions (placeholder - would need backend integration)
     function exportPDF() {
-        alert('PDF export feature - integrate with backend /export/daily-balance-pdf');
+        const projectId = document.getElementById('project-select').value;
+        const fromDate = document.getElementById('from-date').value;
+        const toDate = document.getElementById('to-date').value;
+
+        if (!projectId || !fromDate || !toDate) {
+            alert('Please load data first');
+            return;
+        }
+
+        window.open(`/export/balance-pdf?project_id=${projectId}&from_date=${fromDate}&to_date=${toDate}`, '_blank');
     }
 
     function exportExcel() {
-        alert('Excel export feature - integrate with backend /export/daily-balance-excel');
+        const projectId = document.getElementById('project-select').value;
+        const fromDate = document.getElementById('from-date').value;
+        const toDate = document.getElementById('to-date').value;
+
+        if (!projectId || !fromDate || !toDate) {
+            alert('Please load data first');
+            return;
+        }
+
+        window.open(`/export/balance-excel?project_id=${projectId}&from_date=${fromDate}&to_date=${toDate}`, '_blank');
     }
 
     // Format currency
@@ -185,8 +256,8 @@
         });
     }
 
-    // Set today's date as default
-    document.getElementById('date-select').value = new Date().toISOString().split('T')[0];
+    // Set default to last 30 days
+    setDateRange(30);
 
     // Initialize
     loadProjects();

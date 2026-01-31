@@ -115,7 +115,13 @@
         </div>
         <div class="modal-body">
             <!-- Financial Summary -->
-            <div class="grid grid-3 mb-3" id="financial-summary">
+            <div class="grid grid-4 mb-3" id="financial-summary">
+                <div class="card">
+                    <div class="card-body">
+                        <p class="text-secondary mb-1">Total Budget</p>
+                        <h3 id="summary-budget">₹0.00</h3>
+                    </div>
+                </div>
                 <div class="card">
                     <div class="card-body">
                         <p class="text-secondary mb-1">Total Spent</p>
@@ -130,8 +136,53 @@
                 </div>
                 <div class="card">
                     <div class="card-body">
-                        <p class="text-secondary mb-1">Outstanding</p>
+                        <p class="text-secondary mb-1">Vendor Outstanding</p>
                         <h3 id="summary-outstanding">₹0.00</h3>
+                        <small style="font-size: 0.7rem; color: var(--text-secondary);">What we owe vendors</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Budget Breakdown Pie Chart -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h4 class="card-title">💰 Budget Breakdown</h4>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-2" style="gap: 2rem;">
+                        <div>
+                            <div style="max-width: 400px; margin: 0 auto;">
+                                <canvas id="budget-pie-chart"></canvas>
+                            </div>
+                        </div>
+                        <div>
+                            <h5 style="margin-bottom: 1rem;">Budget Allocation</h5>
+                            <div id="budget-legend" style="max-height: 300px; overflow-y: auto;">
+                                <!-- Legend will be populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Spending Breakdown Pie Chart -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h4 class="card-title">📊 Spending Breakdown by Category</h4>
+                </div>
+                <div class="card-body">
+                    <div class="grid grid-2" style="gap: 2rem;">
+                        <div>
+                            <div style="max-width: 400px; margin: 0 auto;">
+                                <canvas id="spending-pie-chart"></canvas>
+                            </div>
+                        </div>
+                        <div>
+                            <h5 style="margin-bottom: 1rem;">Category Breakdown</h5>
+                            <div id="spending-legend" style="max-height: 300px; overflow-y: auto;">
+                                <!-- Legend will be populated by JS -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -147,7 +198,7 @@
                             <th>Date</th>
                             <th>Amount</th>
                             <th>Paid</th>
-                            <th>Balance</th>
+                            <th>Outstanding</th>
                         </tr>
                     </thead>
                     <tbody id="purchase-history-tbody"></tbody>
@@ -211,6 +262,8 @@
 
 <script>
     let projects = [];
+    let budgetPieChart = null;
+    let spendingPieChart = null;
 
     // Load all projects
     async function loadProjects() {
@@ -335,6 +388,217 @@
         }
     }
 
+    // Render Budget Breakdown Pie Chart
+    function renderBudgetPieChart(projectData) {
+        // Get project budget from the projects array
+        const project = projects.find(p => p.name === document.getElementById('project-modal-title').textContent);
+        const budget = project ? parseFloat(project.budget) : 0;
+
+        const vendorPayments = projectData.financial_summary.total_vendor_payments || 0;
+        const vendorOutstanding = projectData.financial_summary.vendor_outstanding || 0;
+
+        // Calculate regular expenses (Total Spent - Material Purchases)
+        const totalPurchases = projectData.financial_summary.total_purchases || 0;
+        const totalSpent = projectData.financial_summary.total_spent || 0;
+        const regularExpenses = totalSpent - totalPurchases;
+
+        const remainingBudget = Math.max(0, budget - totalSpent);
+
+        // Data arrays
+        const labels = ['Paid to Vendors', 'Vendor Outstanding', 'Regular Expenses', 'Remaining Budget'];
+        const amounts = [vendorPayments, vendorOutstanding, regularExpenses, remainingBudget];
+        const colors = [
+            'rgba(16, 185, 129, 0.8)',   // Green - Paid
+            'rgba(245, 158, 11, 0.8)',   // Orange - Outstanding
+            'rgba(239, 68, 68, 0.8)',    // Red - Regular Expenses
+            'rgba(59, 130, 246, 0.8)'    // Blue - Remaining
+        ];
+
+        // Create custom legend HTML
+        const legendHTML = labels.map((label, idx) => {
+            const amount = amounts[idx];
+            const percentage = budget > 0 ? ((amount / budget) * 100).toFixed(1) : 0;
+            const color = colors[idx];
+
+            return `
+                <div style="display: flex; align-items: center; margin-bottom: 0.75rem; padding: 0.5rem; background: var(--card-bg); border-radius: 8px;">
+                    <div style="width: 20px; height: 20px; background: ${color}; border-radius: 4px; margin-right: 10px;"></div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; font-size: 0.9rem;">${label}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                            ${formatCurrency(amount)} (${percentage}%)
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        document.getElementById('budget-legend').innerHTML = legendHTML;
+
+        // Destroy existing chart if exists
+        if (budgetPieChart) {
+            budgetPieChart.destroy();
+        }
+
+        // Create pie chart with 4 slices
+        const ctx = document.getElementById('budget-pie-chart').getContext('2d');
+
+        budgetPieChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: amounts,
+                    backgroundColor: colors,
+                    borderColor: colors.map(c => c.replace('0.8', '1')),
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: false  // Using custom legend
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const percentage = budget > 0 ? ((value / budget) * 100).toFixed(1) : 0;
+                                return label + ': ₹' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Render Spending Breakdown Pie Chart
+    function renderSpendingPieChart(projectData) {
+        // Collect all spending by category/subcategory
+        const spendingMap = {};
+
+        // Add material purchases by subcategory - split into Paid and Outstanding
+        projectData.purchase_history.forEach(purchase => {
+            const category = purchase.subcategory || 'Materials';
+            const amount = parseFloat(purchase.amount);
+            const balance = parseFloat(purchase.balance);
+            const paid = amount - balance;
+
+            // Add paid portion
+            if (paid > 0) {
+                const paidKey = category + ' (Paid)';
+                if (!spendingMap[paidKey]) {
+                    spendingMap[paidKey] = 0;
+                }
+                spendingMap[paidKey] += paid;
+            }
+
+            // Add outstanding portion
+            if (balance > 0) {
+                const outstandingKey = category + ' (Outstanding)';
+                if (!spendingMap[outstandingKey]) {
+                    spendingMap[outstandingKey] = 0;
+                }
+                spendingMap[outstandingKey] += balance;
+            }
+        });
+
+        // Add regular expenses by category or subcategory
+        projectData.expenses.forEach(expense => {
+            const category = expense.subcategory || expense.category || 'Other';
+            if (!spendingMap[category]) {
+                spendingMap[category] = 0;
+            }
+            spendingMap[category] += parseFloat(expense.amount);
+        });
+
+        // Convert to arrays for Chart.js
+        const categories = Object.keys(spendingMap);
+        const amounts = Object.values(spendingMap);
+
+        // Generate colors dynamically
+        const colors = [
+            'rgba(239, 68, 68, 0.8)',    // Red
+            'rgba(245, 158, 11, 0.8)',   // Orange
+            'rgba(16, 185, 129, 0.8)',   // Green
+            'rgba(59, 130, 246, 0.8)',   // Blue
+            'rgba(139, 92, 246, 0.8)',   // Purple
+            'rgba(236, 72, 153, 0.8)',   // Pink
+            'rgba(20, 184, 166, 0.8)',   // Teal
+            'rgba(251, 146, 60, 0.8)',   // Amber
+            'rgba(132, 204, 22, 0.8)',   // Lime
+            'rgba(168, 85, 247, 0.8)',   // Violet
+        ];
+
+        const borderColors = colors.map(c => c.replace('0.8', '1'));
+
+        // Create legend HTML
+        const totalSpent = amounts.reduce((sum, val) => sum + val, 0);
+        const legendHTML = categories.map((cat, idx) => {
+            const amount = amounts[idx];
+            const percentage = totalSpent > 0 ? ((amount / totalSpent) * 100).toFixed(1) : 0;
+            const color = colors[idx % colors.length];
+
+            return `
+                <div style="display: flex; align-items: center; margin-bottom: 0.75rem; padding: 0.5rem; background: var(--card-bg); border-radius: 8px;">
+                    <div style="width: 20px; height: 20px; background: ${color}; border-radius: 4px; margin-right: 10px;"></div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; font-size: 0.9rem;">${cat}</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                            ${formatCurrency(amount)} (${percentage}%)
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        document.getElementById('spending-legend').innerHTML = legendHTML;
+
+        // Destroy existing chart if exists
+        if (spendingPieChart) {
+            spendingPieChart.destroy();
+        }
+
+        // Create pie chart
+        const ctx = document.getElementById('spending-pie-chart').getContext('2d');
+
+        spendingPieChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: categories,
+                datasets: [{
+                    data: amounts,
+                    backgroundColor: colors.slice(0, categories.length),
+                    borderColor: borderColors.slice(0, categories.length),
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: false  // We're using custom legend
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const percentage = totalSpent > 0 ? ((value / totalSpent) * 100).toFixed(1) : 0;
+                                return label + ': ₹' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // Show project details
     async function showProjectDetails(projectId, projectName) {
         document.getElementById('project-modal-title').textContent = projectName;
@@ -345,9 +609,19 @@
             const data = await response.json();
 
             // Update financial summary
+            const project = projects.find(p => p.project_id === projectId);
+            if (project) {
+                document.getElementById('summary-budget').textContent = formatCurrency(project.budget);
+            }
             document.getElementById('summary-spent').textContent = formatCurrency(data.financial_summary.total_spent);
             document.getElementById('summary-received').textContent = formatCurrency(data.financial_summary.total_received);
-            document.getElementById('summary-outstanding').textContent = formatCurrency(data.financial_summary.outstanding);
+            document.getElementById('summary-outstanding').textContent = formatCurrency(data.financial_summary.vendor_outstanding);
+
+            // Render Budget Breakdown Pie Chart
+            renderBudgetPieChart(data);
+
+            // Render Spending Breakdown Pie Chart
+            renderSpendingPieChart(data);
 
             // Render purchase history
             const purchasesTbody = document.getElementById('purchase-history-tbody');

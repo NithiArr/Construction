@@ -25,8 +25,9 @@
         </div>
 
         <div class="kpi-card">
-            <div class="kpi-label">Outstanding</div>
+            <div class="kpi-label">Vendor Outstanding</div>
             <div class="kpi-value" id="total-outstanding">₹0</div>
+            <small class="text-secondary" style="font-size: 0.75rem;">What we owe vendors</small>
         </div>
     </div>
 
@@ -94,7 +95,7 @@
             document.getElementById('total-projects').textContent = data.total_projects;
             document.getElementById('total-budget').textContent = formatCurrency(data.total_budget);
             document.getElementById('total-spent').textContent = formatCurrency(data.total_spent);
-            document.getElementById('total-outstanding').textContent = formatCurrency(data.total_outstanding);
+            document.getElementById('total-outstanding').textContent = formatCurrency(data.vendor_outstanding);
 
             // Load status chart
             loadStatusChart(data.status_breakdown);
@@ -183,7 +184,7 @@
             <td>${formatCurrency(project.budget)}</td>
             <td>${formatCurrency(project.amount_spent)}</td>
             <td>${formatCurrency(project.amount_received)}</td>
-            <td>${formatCurrency(project.outstanding)}</td>
+            <td><strong>${formatCurrency(project.vendor_outstanding)}</strong></td>
             <td class="indicator-${project.indicator}">
                 <strong>${formatCurrency(project.balance_budget)}</strong>
                 ${project.indicator === 'over' ? '🔴' : project.indicator === 'near' ? '🟡' : '🟢'}

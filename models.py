@@ -21,7 +21,6 @@ class Company(db.Model):
     projects = db.relationship('Project', back_populates='company', cascade='all, delete-orphan')
     vendors = db.relationship('Vendor', back_populates='company', cascade='all, delete-orphan')
     expenses = db.relationship('Expense', back_populates='company', cascade='all, delete-orphan')
-    purchases = db.relationship('Purchase', back_populates='company', cascade='all, delete-orphan')
     payments = db.relationship('Payment', back_populates='company', cascade='all, delete-orphan')
     client_payments = db.relationship('ClientPayment', back_populates='company', cascade='all, delete-orphan')
     
@@ -88,7 +87,6 @@ class Project(db.Model):
     # Relationships
     company = db.relationship('Company', back_populates='projects')
     expenses = db.relationship('Expense', back_populates='project', cascade='all, delete-orphan')
-    purchases = db.relationship('Purchase', back_populates='project', cascade='all, delete-orphan')
     payments = db.relationship('Payment', back_populates='project', cascade='all, delete-orphan')
     client_payments = db.relationship('ClientPayment', back_populates='project', cascade='all, delete-orphan')
     
@@ -110,7 +108,7 @@ class Vendor(db.Model):
     
     # Relationships
     company = db.relationship('Company', back_populates='vendors')
-    purchases = db.relationship('Purchase', back_populates='vendor', cascade='all, delete-orphan')
+    expenses = db.relationship('Expense', back_populates='vendor', cascade='all, delete-orphan')
     payments = db.relationship('Payment', back_populates='vendor', cascade='all, delete-orphan')
     
     def __repr__(self):
@@ -118,70 +116,54 @@ class Vendor(db.Model):
 
 
 class Expense(db.Model):
-    """Expense model for project expenses"""
+    """Unified Expense model (merging Expenses and Purchases)"""
     __tablename__ = 'expense'
     
     expense_id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey('company.company_id'), nullable=False)
     project_id = db.Column(db.Integer, db.ForeignKey('project.project_id'), nullable=False)
-    category = db.Column(db.String(100), nullable=False)
-    subcategory = db.Column(db.String(100))  # NEW: For detailed expense classification
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.vendor_id'), nullable=True) # Nullable for regular expenses
+    
+    category = db.Column(db.String(100), nullable=False) # 'Regular Expense' or 'Material Purchase'
+    subcategory = db.Column(db.String(100)) # Detailed type or Material name
+    
     amount = db.Column(db.Numeric(15, 2), nullable=False)
-    payment_mode = db.Column(db.String(20), nullable=False)  # CASH, BANK, UPI
-    expense_date = db.Column(db.Date, nullable=False)
+    payment_mode = db.Column(db.String(20), nullable=False) # CASH, BANK, UPI, CREDIT
+    expense_date = db.Column(db.Date, nullable=False) # Date of expense or invoice
+    
     description = db.Column(db.Text)
+    invoice_number = db.Column(db.String(100)) # Specific to purchases
     bill_url = db.Column(db.String(500))
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
     company = db.relationship('Company', back_populates='expenses')
     project = db.relationship('Project', back_populates='expenses')
+    vendor = db.relationship('Vendor', back_populates='expenses')
+    items = db.relationship('ExpenseItem', back_populates='expense', cascade='all, delete-orphan')
+    payments = db.relationship('Payment', back_populates='expense')
     
     def __repr__(self):
         return f'<Expense {self.category} - {self.amount}>'
 
 
-class Purchase(db.Model):
-    """Purchase model for purchase orders"""
-    __tablename__ = 'purchase'
+class ExpenseItem(db.Model):
+    """Expense item model for line items (formerly PurchaseItem)"""
+    __tablename__ = 'expense_item'
     
-    purchase_id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey('company.company_id'), nullable=False)
-    project_id = db.Column(db.Integer, db.ForeignKey('project.project_id'), nullable=False)
-    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.vendor_id'), nullable=False)
-    invoice_number = db.Column(db.String(100))
-    invoice_date = db.Column(db.Date, nullable=False)
-    total_amount = db.Column(db.Numeric(15, 2), nullable=False)
-    payment_type = db.Column(db.String(20), nullable=False)  # CASH, CREDIT
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    company = db.relationship('Company', back_populates='purchases')
-    project = db.relationship('Project', back_populates='purchases')
-    vendor = db.relationship('Vendor', back_populates='purchases')
-    items = db.relationship('PurchaseItem', back_populates='purchase', cascade='all, delete-orphan')
-    payments = db.relationship('Payment', back_populates='purchase')
-    
-    def __repr__(self):
-        return f'<Purchase {self.invoice_number}>'
-
-
-class PurchaseItem(db.Model):
-    """Purchase item model for line items"""
-    __tablename__ = 'purchase_item'
-    
-    purchase_item_id = db.Column(db.Integer, primary_key=True)
-    purchase_id = db.Column(db.Integer, db.ForeignKey('purchase.purchase_id'), nullable=False)
+    expense_item_id = db.Column(db.Integer, primary_key=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('expense.expense_id'), nullable=False)
     item_name = db.Column(db.String(200), nullable=False)
     quantity = db.Column(db.Numeric(10, 2), nullable=False)
     unit_price = db.Column(db.Numeric(15, 2), nullable=False)
     total_price = db.Column(db.Numeric(15, 2), nullable=False)
     
     # Relationships
-    purchase = db.relationship('Purchase', back_populates='items')
+    expense = db.relationship('Expense', back_populates='items')
     
     def __repr__(self):
-        return f'<PurchaseItem {self.item_name}>'
+        return f'<ExpenseItem {self.item_name}>'
 
 
 class Payment(db.Model):
@@ -192,7 +174,8 @@ class Payment(db.Model):
     company_id = db.Column(db.Integer, db.ForeignKey('company.company_id'), nullable=False)
     vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.vendor_id'), nullable=False)
     project_id = db.Column(db.Integer, db.ForeignKey('project.project_id'), nullable=False)
-    purchase_id = db.Column(db.Integer, db.ForeignKey('purchase.purchase_id'), nullable=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('expense.expense_id'), nullable=True) # Linked to Material Purchase expense
+    
     amount = db.Column(db.Numeric(15, 2), nullable=False)
     payment_date = db.Column(db.Date, nullable=False)
     payment_mode = db.Column(db.String(20), nullable=False)  # CASH, BANK, UPI
@@ -202,7 +185,7 @@ class Payment(db.Model):
     company = db.relationship('Company', back_populates='payments')
     vendor = db.relationship('Vendor', back_populates='payments')
     project = db.relationship('Project', back_populates='payments')
-    purchase = db.relationship('Purchase', back_populates='payments')
+    expense = db.relationship('Expense', back_populates='payments')
     
     def __repr__(self):
         return f'<Payment {self.amount}>'

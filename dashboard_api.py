@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for
 from flask_login import login_required, current_user
-from models import db, Project, Vendor, Purchase, PurchaseItem, Expense, Payment, ClientPayment
+from models import db, Project, Vendor, Expense, ExpenseItem, Payment, ClientPayment
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -60,22 +60,33 @@ def get_owner_kpis():
     
     total_budget = sum([float(p.budget or 0) for p in projects])
     
-    # Calculate total spent (expenses + purchases)
-    total_expenses = sum([
+    # Calculate total spent (Regular Expenses + Material Purchases)
+    total_spent = sum([
         float(e.amount) for p in projects for e in p.expenses
     ])
-    total_purchases = sum([
-        float(pur.total_amount) for p in projects for pur in p.purchases
-    ])
-    total_spent = total_expenses + total_purchases
     
-    # Calculate total received (client payments)
+    # Calculate Material Purchases only (for vendor payables)
+    total_material_purchases = sum([
+        float(e.amount) for p in projects for e in p.expenses
+        if e.category == 'Material Purchase'
+    ])
+    
+    # Calculate total vendor payments made
+    total_vendor_payments = sum([
+        float(payment.amount) for p in projects for payment in p.payments
+    ])
+    
+    # Calculate total received from clients
     total_received = sum([
         float(cp.amount) for p in projects for cp in p.client_payments
     ])
     
-    # Outstanding = Spent - Received
-    total_outstanding = total_spent - total_received
+    # FIXED LOGIC:
+    # Vendor Outstanding (Payables) = What we owe vendors
+    vendor_outstanding = total_material_purchases - total_vendor_payments
+    
+    # Client Outstanding (Receivables) = What clients owe us
+    client_outstanding = total_spent - total_received
     
     # Balance budget = Budget - Spent
     balance_budget = total_budget - total_spent
@@ -85,8 +96,11 @@ def get_owner_kpis():
         'status_breakdown': status_breakdown,
         'total_budget': total_budget,
         'total_spent': total_spent,
+        'total_material_purchases': total_material_purchases,
+        'total_vendor_payments': total_vendor_payments,
         'total_received': total_received,
-        'total_outstanding': total_outstanding,
+        'vendor_outstanding': vendor_outstanding,  # What we owe vendors
+        'client_outstanding': client_outstanding,  # What clients owe us
         'balance_budget': balance_budget
     })
 
@@ -106,21 +120,34 @@ def get_status_wise_overview():
                 'count': 0,
                 'total_budget': 0,
                 'total_spent': 0,
-                'total_outstanding': 0
+                'vendor_outstanding': 0,  # What we owe vendors
+                'client_outstanding': 0   # What clients owe us
             }
         
-        # Calculate project financials
-        expenses = sum([float(e.amount) for e in project.expenses])
-        purchases = sum([float(p.total_amount) for p in project.purchases])
-        spent = expenses + purchases
+        # Calculate project financials (all expenses)
+        spent = sum([float(e.amount) for e in project.expenses])
         
+        # Material purchases only
+        material_purchases = sum([
+            float(e.amount) for e in project.expenses
+            if e.category == 'Material Purchase'
+        ])
+        
+        # Vendor payments made
+        vendor_payments = sum([float(p.amount) for p in project.payments])
+        
+        # Client payments received
         received = sum([float(cp.amount) for cp in project.client_payments])
-        outstanding = spent - received
+        
+        # Fixed calculations
+        vendor_outstanding = material_purchases - vendor_payments
+        client_outstanding = spent - received
         
         status_data[status]['count'] += 1
         status_data[status]['total_budget'] += float(project.budget or 0)
         status_data[status]['total_spent'] += spent
-        status_data[status]['total_outstanding'] += outstanding
+        status_data[status]['vendor_outstanding'] += vendor_outstanding
+        status_data[status]['client_outstanding'] += client_outstanding
     
     return jsonify(status_data)
 
@@ -135,12 +162,23 @@ def get_project_financial_table():
     
     for project in projects:
         # Calculate financials
-        expenses = sum([float(e.amount) for e in project.expenses])
-        purchases = sum([float(p.total_amount) for p in project.purchases])
-        amount_spent = expenses + purchases
+        amount_spent = sum([float(e.amount) for e in project.expenses])
         
+        # Material purchases only
+        material_purchases = sum([
+            float(e.amount) for e in project.expenses
+            if e.category == 'Material Purchase'
+        ])
+        
+        # Vendor payments made for this project
+        vendor_payments_made = sum([float(p.amount) for p in project.payments])
+        
+        # Client payments received
         amount_received = sum([float(cp.amount) for cp in project.client_payments])
-        outstanding = amount_spent - amount_received
+        
+        # Fixed calculations
+        vendor_outstanding = material_purchases - vendor_payments_made  # What we owe vendors
+        client_outstanding = amount_spent - amount_received  # What client owes us
         
         budget = float(project.budget or 0)
         balance_budget = budget - amount_spent
@@ -160,7 +198,8 @@ def get_project_financial_table():
             'budget': budget,
             'amount_spent': amount_spent,
             'amount_received': amount_received,
-            'outstanding': outstanding,
+            'vendor_outstanding': vendor_outstanding,  # What we owe vendors
+            'client_outstanding': client_outstanding,  # What clients owe us
             'balance_budget': balance_budget,
             'indicator': indicator
         })
@@ -171,15 +210,17 @@ def get_project_financial_table():
 @dashboard_bp.route('/api/vendor-summary', methods=['GET'])
 @login_required
 def get_vendor_summary():
-    """Get vendor summary with purchases and payments"""
+    """Get vendor summary with purchases (Expenses) and payments"""
     
     vendors = company_filter(Vendor.query).all()
     
     data = []
     
     for vendor in vendors:
-        # Total purchases
-        total_purchases = sum([float(p.total_amount) for p in vendor.purchases])
+        # Total purchases (Expenses linked to this vendor)
+        # Note: Regular expenses usually don't have vendor_id, but if they do, they count.
+        # Strict logic: Category 'Material Purchase' or any request with vendor_id.
+        total_purchases = sum([float(e.amount) for e in vendor.expenses])
         
         # Total paid
         total_paid = sum([float(pay.amount) for pay in vendor.payments])
@@ -206,17 +247,18 @@ def get_vendor_purchase_history(vendor_id):
     
     data = []
     
-    for purchase in vendor.purchases:
-        # Calculate paid amount for this purchase
-        paid = sum([float(p.amount) for p in purchase.payments])
-        balance = float(purchase.total_amount) - paid
+    # Iterate over expenses linked to vendor (previously purchases)
+    for expense in vendor.expenses:
+        # Calculate paid amount for this purchase/expense
+        paid = sum([float(p.amount) for p in expense.payments])
+        balance = float(expense.amount) - paid
         
         data.append({
-            'purchase_id': purchase.purchase_id,
-            'project_name': purchase.project.name,
-            'invoice_number': purchase.invoice_number,
-            'invoice_date': purchase.invoice_date.isoformat(),
-            'amount': float(purchase.total_amount),
+            'purchase_id': expense.expense_id,
+            'project_name': expense.project.name,
+            'invoice_number': expense.invoice_number or '-',
+            'invoice_date': expense.expense_date.isoformat(),
+            'amount': float(expense.amount),
             'paid': paid,
             'balance': balance
         })
@@ -233,8 +275,9 @@ def get_vendor_material_summary(vendor_id):
     # Aggregate by material
     material_data = {}
     
-    for purchase in vendor.purchases:
-        for item in purchase.items:
+    for expense in vendor.expenses:
+        # Check items (ExpenseItems)
+        for item in expense.items:
             material = item.item_name
             if material not in material_data:
                 material_data[material] = {
@@ -265,22 +308,44 @@ def get_project_payment_details(project_id):
     
     project = company_filter(Project.query).filter_by(project_id=project_id).first_or_404()
     
-    # Purchase History
+    # Split expenses into 'Material Purchase' and 'Regular Expense'
+    # Material Purchases (replacing Purchase History)
     purchase_history = []
-    for purchase in project.purchases:
-        # Calculate paid amount for this purchase
-        paid = sum([float(p.amount) for p in purchase.payments])
-        balance = float(purchase.total_amount) - paid
-        
-        purchase_history.append({
-            'purchase_id': purchase.purchase_id,
-            'vendor_name': purchase.vendor.name,
-            'invoice_number': purchase.invoice_number,
-            'invoice_date': purchase.invoice_date.isoformat() if purchase.invoice_date else None,
-            'amount': float(purchase.total_amount),
-            'paid': paid,
-            'balance': balance
-        })
+    regular_expenses = []
+    
+    total_purchases_amount = 0
+    total_expenses_amount = 0
+    
+    for expense in project.expenses:
+        if expense.category == 'Material Purchase':
+            # It's a purchase
+            paid = sum([float(p.amount) for p in expense.payments])
+            balance = float(expense.amount) - paid
+            
+            purchase_history.append({
+                'purchase_id': expense.expense_id,
+                'vendor_name': expense.vendor.name if expense.vendor else 'Unknown',
+                'invoice_number': expense.invoice_number or '-',
+                'invoice_date': expense.expense_date.isoformat(),
+                'subcategory': expense.subcategory,
+                'amount': float(expense.amount),
+                'paid': paid,
+                'balance': balance
+            })
+            total_purchases_amount += float(expense.amount)
+            
+        else:
+            # Regular Expense
+            regular_expenses.append({
+                'expense_id': expense.expense_id,
+                'expense_date': expense.expense_date.isoformat(),
+                'category': expense.category,
+                'subcategory': expense.subcategory,
+                'amount': float(expense.amount),
+                'payment_mode': expense.payment_mode,
+                'description': expense.description
+            })
+            total_expenses_amount += float(expense.amount)
     
     # Vendor Payments
     vendor_payments = []
@@ -291,20 +356,7 @@ def get_project_payment_details(project_id):
             'vendor_name': payment.vendor.name,
             'amount': float(payment.amount),
             'payment_mode': payment.payment_mode,
-            'purchase_invoice': payment.purchase.invoice_number if payment.purchase else '-'
-        })
-    
-    # Expenses
-    expenses = []
-    for expense in project.expenses:
-        expenses.append({
-            'expense_id': expense.expense_id,
-            'expense_date': expense.expense_date.isoformat() if expense.expense_date else None,
-            'category': expense.category,
-            'subcategory': expense.subcategory,
-            'amount': float(expense.amount),
-            'payment_mode': expense.payment_mode,
-            'description': expense.description
+            'purchase_invoice': payment.expense.invoice_number if payment.expense else '-'
         })
     
     # Client Payments
@@ -320,31 +372,28 @@ def get_project_payment_details(project_id):
         })
     
     # Financial Summary
-    total_purchases = sum([float(p.total_amount) for p in project.purchases])
-    total_expenses = sum([float(e.amount) for e in project.expenses])
-    total_spent = total_purchases + total_expenses
-    
+    total_spent = total_purchases_amount + total_expenses_amount
     total_received = sum([float(cp.amount) for cp in project.client_payments])
-    outstanding = total_spent - total_received
     
     total_vendor_payments = sum([float(p.amount) for p in project.payments])
-    pending_vendor_payments = total_purchases - total_vendor_payments
+    vendor_outstanding = total_purchases_amount - total_vendor_payments  # What we owe vendors
+    client_outstanding = total_spent - total_received  # What client owes us
     
     return jsonify({
         'project_name': project.name,
         'project_status': project.status,
         'purchase_history': purchase_history,
         'vendor_payments': vendor_payments,
-        'expenses': expenses,
+        'expenses': regular_expenses,
         'client_payments': client_payments,
         'financial_summary': {
-            'total_purchases': total_purchases,
-            'total_expenses': total_expenses,
+            'total_purchases': total_purchases_amount,
+            'total_expenses': total_expenses_amount,
             'total_spent': total_spent,
             'total_received': total_received,
-            'outstanding': outstanding,
-            'total_vendor_payments': total_vendor_payments,
-            'pending_vendor_payments': pending_vendor_payments
+            'vendor_outstanding': vendor_outstanding,  # What we owe vendors
+            'client_outstanding': client_outstanding,  # What clients owe us
+            'total_vendor_payments': total_vendor_payments
         }
     })
 
@@ -352,86 +401,104 @@ def get_project_payment_details(project_id):
 @dashboard_bp.route('/api/daily-cash-balance', methods=['GET'])
 @login_required
 def get_daily_cash_balance():
-    """Get daily cash balance for a project and date"""
+    """Get cash balance for a project and date range"""
     
     project_id = request.args.get('project_id', type=int)
-    date_str = request.args.get('date')
+    from_date_str = request.args.get('from_date')
+    to_date_str = request.args.get('to_date')
     
-    if not project_id or not date_str:
-        return jsonify({'error': 'project_id and date required'}), 400
+    # Backward compatibility: support single 'date' parameter
+    if not from_date_str and request.args.get('date'):
+        from_date_str = request.args.get('date')
+        to_date_str = from_date_str
+    
+    if not project_id or not from_date_str or not to_date_str:
+        return jsonify({'error': 'project_id, from_date and to_date required'}), 400
     
     project = company_filter(Project.query).filter_by(project_id=project_id).first_or_404()
-    target_date = datetime.fromisoformat(date_str).date()
+    from_date = datetime.fromisoformat(from_date_str).date()
+    to_date = datetime.fromisoformat(to_date_str).date()
     
-    # Calculate opening balance (all transactions before target date)
+    # Calculate opening balance (all transactions before from_date)
     prev_client_payments = sum([
         float(cp.amount) for cp in project.client_payments
-        if cp.payment_date < target_date
+        if cp.payment_date < from_date
     ])
     
-    prev_expenses = sum([
+    prev_direct_expenses = sum([
         float(e.amount) for e in project.expenses
-        if e.expense_date < target_date
+        if e.expense_date < from_date and e.payment_mode in ['CASH', 'BANK', 'UPI']
     ])
     
-    prev_payments = sum([
+    prev_vendor_payments = sum([
         float(p.amount) for p in project.payments
-        if p.payment_date < target_date
+        if p.payment_date < from_date
     ])
     
-    opening_balance = prev_client_payments - prev_expenses - prev_payments
+    opening_balance = prev_client_payments - prev_direct_expenses - prev_vendor_payments
     
-    # Today's transactions
-    today_client_payments = [
+    # Period transactions (from_date to to_date inclusive)
+    period_client_payments = [
         {
             'type': 'client_payment',
+            'date': cp.payment_date.isoformat(),
             'amount': float(cp.amount),
             'payment_mode': cp.payment_mode,
             'reference': cp.reference_number,
             'remarks': cp.remarks
         }
-        for cp in project.client_payments if cp.payment_date == target_date
+        for cp in project.client_payments 
+        if from_date <= cp.payment_date <= to_date
     ]
     
-    today_expenses = [
+    # Period direct expenses (Cash/Bank/UPI)
+    period_expenses = [
         {
             'type': 'expense',
+            'date': e.expense_date.isoformat(),
             'amount': float(e.amount),
             'category': e.category,
+            'subcategory': e.subcategory,
             'payment_mode': e.payment_mode,
             'description': e.description
         }
-        for e in project.expenses if e.expense_date == target_date
+        for e in project.expenses 
+        if from_date <= e.expense_date <= to_date and e.payment_mode in ['CASH', 'BANK', 'UPI']
     ]
     
-    today_payments = [
+    # Period vendor payments
+    period_payments = [
         {
             'type': 'vendor_payment',
+            'date': p.payment_date.isoformat(),
             'amount': float(p.amount),
             'vendor_name': p.vendor.name,
             'payment_mode': p.payment_mode
         }
-        for p in project.payments if p.payment_date == target_date
+        for p in project.payments 
+        if from_date <= p.payment_date <= to_date
     ]
     
-    # Totals for today
-    total_client_receipts = sum([t['amount'] for t in today_client_payments])
-    total_expenses = sum([t['amount'] for t in today_expenses])
-    total_payments = sum([t['amount'] for t in today_payments])
+    # Totals for period
+    total_client_receipts = sum([t['amount'] for t in period_client_payments])
+    total_expenses_outflow = sum([t['amount'] for t in period_expenses])
+    total_payments_outflow = sum([t['amount'] for t in period_payments])
     
     # Closing balance
-    closing_balance = opening_balance + total_client_receipts - total_expenses - total_payments
+    closing_balance = opening_balance + total_client_receipts - total_expenses_outflow - total_payments_outflow
     
-    # All transactions combined
-    all_transactions = today_client_payments + today_expenses + today_payments
+    # All transactions combined and sorted by date
+    all_transactions = period_client_payments + period_expenses + period_payments
+    all_transactions.sort(key=lambda x: x['date'])
     
     return jsonify({
         'project_name': project.name,
-        'date': date_str,
+        'from_date': from_date_str,
+        'to_date': to_date_str,
         'opening_balance': opening_balance,
         'client_receipts': total_client_receipts,
-        'expenses': total_expenses,
-        'vendor_payments': total_payments,
+        'expenses': total_expenses_outflow,
+        'vendor_payments': total_payments_outflow,
         'closing_balance': closing_balance,
         'transactions': all_transactions
     })
@@ -459,6 +526,7 @@ def get_payment_mode_split():
         ])
         
         # Calculate expenses in this mode
+        # Only include actual outflows, not CREDIT purchases (if any end up here, though typical expenses are cash/bank)
         expenses_spent = sum([
             float(e.amount) for e in expenses
             if e.payment_mode == mode

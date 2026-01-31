@@ -2,7 +2,7 @@ import sqlite3
 import os
 
 # Flask creates database in instance folder
-db_path = 'instance/construction.db'
+db_path = 'instance/construction_v2.db'
 
 if not os.path.exists(db_path):
     print("Database file not found!")

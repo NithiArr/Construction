@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
-from models import db, Project, Vendor, Purchase, PurchaseItem, Expense, Payment, ClientPayment
+from models import db, Project, Vendor, Expense, ExpenseItem, Payment, ClientPayment
 from functools import wraps
 from datetime import datetime
 from sqlalchemy import func
@@ -167,22 +167,24 @@ def delete_vendor(vendor_id):
     db.session.commit()
     return jsonify({'message': 'Vendor deleted'})
 
-# ==================== PURCHASES API ====================
+# ==================== PURCHASES API (Mapped to Expenses) ====================
 @api_bp.route('/purchases', methods=['GET'])
 @login_required
 def get_purchases():
-    """Get all purchases"""
-    purchases = company_data_filter(Purchase.query).all()
+    """Get all purchases (Expenses with category 'Material Purchase')"""
+    # Query Expenses where category is 'Material Purchase'
+    purchases = company_data_filter(Expense.query).filter_by(category='Material Purchase').all()
     return jsonify([{
-        'purchase_id': p.purchase_id,
+        'purchase_id': p.expense_id, # Map expense_id to purchase_id
         'project_id': p.project_id,
         'project_name': p.project.name,
         'vendor_id': p.vendor_id,
-        'vendor_name': p.vendor.name,
+        'vendor_name': p.vendor.name if p.vendor else None,
         'invoice_number': p.invoice_number,
-        'invoice_date': p.invoice_date.isoformat(),
-        'total_amount': float(p.total_amount),
-        'payment_type': p.payment_type,
+        'invoice_date': p.expense_date.isoformat(),
+        'total_amount': float(p.amount),
+        'payment_type': p.payment_mode,
+        'subcategory': p.subcategory,
         'items': [{
             'item_name': item.item_name,
             'quantity': float(item.quantity),
@@ -195,26 +197,36 @@ def get_purchases():
 @login_required
 @role_required('ADMIN', 'MANAGER')
 def create_purchase():
-    """Create new purchase with items"""
+    """Create new purchase (Expense + Items)"""
     data = request.get_json()
     
-    purchase = Purchase(
+    # Determine subcategory from request (user should provide it, or we infer)
+    # The requirement says subcategory will tell "what the material purchase done"
+    subcategory = data.get('subcategory')
+    if not subcategory and data.get('items'):
+        # Fallback: use the first item name as subcategory
+        subcategory = data['items'][0]['item_name']
+    
+    purchase = Expense(
         company_id=current_user.company_id,
         project_id=data['project_id'],
         vendor_id=data['vendor_id'],
+        category='Material Purchase',
+        subcategory=subcategory,
         invoice_number=data.get('invoice_number'),
-        invoice_date=datetime.fromisoformat(data['invoice_date']),
-        total_amount=data['total_amount'],
-        payment_type=data['payment_type']
+        expense_date=datetime.fromisoformat(data['invoice_date']),
+        amount=data['total_amount'],
+        payment_mode=data['payment_type'],
+        description=f"Invoice #{data.get('invoice_number')}"
     )
     
     db.session.add(purchase)
     db.session.flush()
     
-    # Add purchase items
+    # Add expense items (formerly PurchaseItems)
     for item_data in data.get('items', []):
-        item = PurchaseItem(
-            purchase_id=purchase.purchase_id,
+        item = ExpenseItem(
+            expense_id=purchase.expense_id,
             item_name=item_data['item_name'],
             quantity=item_data['quantity'],
             unit_price=item_data['unit_price'],
@@ -223,14 +235,14 @@ def create_purchase():
         db.session.add(item)
     
     db.session.commit()
-    return jsonify({'message': 'Purchase created', 'purchase_id': purchase.purchase_id}), 201
+    return jsonify({'message': 'Purchase created', 'purchase_id': purchase.expense_id}), 201
 
 @api_bp.route('/purchases/<int:purchase_id>', methods=['DELETE'])
 @login_required
 @role_required('ADMIN')
 def delete_purchase(purchase_id):
-    """Delete purchase"""
-    purchase = company_data_filter(Purchase.query).filter_by(purchase_id=purchase_id).first_or_404()
+    """Delete purchase (Expense)"""
+    purchase = company_data_filter(Expense.query).filter_by(expense_id=purchase_id, category='Material Purchase').first_or_404()
     db.session.delete(purchase)
     db.session.commit()
     return jsonify({'message': 'Purchase deleted'})
@@ -239,8 +251,8 @@ def delete_purchase(purchase_id):
 @api_bp.route('/expenses', methods=['GET'])
 @login_required
 def get_expenses():
-    """Get all expenses"""
-    expenses = company_data_filter(Expense.query).all()
+    """Get all regular expenses"""
+    expenses = company_data_filter(Expense.query).filter_by(category='Regular Expense').all()
     return jsonify([{
         'expense_id': e.expense_id,
         'project_id': e.project_id,
@@ -258,14 +270,14 @@ def get_expenses():
 @login_required
 @role_required('ADMIN', 'ACCOUNTANT')
 def create_expense():
-    """Create new expense"""
+    """Create new regular expense"""
     data = request.get_json()
     
     expense = Expense(
         company_id=current_user.company_id,
         project_id=data['project_id'],
-        category=data['category'],
-        subcategory=data.get('subcategory'),
+        category='Regular Expense',
+        subcategory=data.get('subcategory'), # User provided subcategory
         amount=data['amount'],
         payment_mode=data['payment_mode'],
         expense_date=datetime.fromisoformat(data['expense_date']),
@@ -300,7 +312,8 @@ def get_payments():
         'vendor_name': p.vendor.name,
         'project_id': p.project_id,
         'project_name': p.project.name,
-        'purchase_id': p.purchase_id,
+        'purchase_id': p.expense_id, # Frontend expects purchase_id, map to expense_id
+        'expense_id': p.expense_id,
         'amount': float(p.amount),
         'payment_date': p.payment_date.isoformat(),
         'payment_mode': p.payment_mode
@@ -317,7 +330,7 @@ def create_payment():
         company_id=current_user.company_id,
         vendor_id=data['vendor_id'],
         project_id=data['project_id'],
-        purchase_id=data.get('purchase_id'),
+        expense_id=data.get('purchase_id'), # Map purchase_id from frontend to expense_id
         amount=data['amount'],
         payment_date=datetime.fromisoformat(data['payment_date']),
         payment_mode=data['payment_mode']

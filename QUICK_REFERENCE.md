@@ -95,7 +95,7 @@ python create_role_users.py
 
 ## 📂 Database Location
 
-**SQLite Database**: `e:\Personal\Construction\instance\construction.db`
+**SQLite Database**: `e:\Personal\Construction\instance\construction_v2.db`
 
 You can view it with:
 - DB Browser for SQLite (download from sqlitebrowser.org)

@@ -33,8 +33,3 @@ def payments_page():
 @login_required
 def client_payments_page():
     return render_template('client_payments.html', user=current_user)
-
-@pages_bp.route('/payment-mode-split')
-@login_required
-def payment_mode_split_page():
-    return render_template('payment_mode_split.html', user=current_user)
