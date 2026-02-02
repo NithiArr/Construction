@@ -30,6 +30,7 @@
             </div>
 
             <div class="flex gap-2 mt-2" style="flex-wrap: wrap;">
+                <button class="btn btn-sm btn-secondary" onclick="setToday()">Today</button>
                 <button class="btn btn-sm btn-secondary" onclick="setDateRange(7)">Last 7 Days</button>
                 <button class="btn btn-sm btn-secondary" onclick="setDateRange(30)">Last 30 Days</button>
                 <button class="btn btn-sm btn-secondary" onclick="setCurrentMonth()">This Month</button>
@@ -58,8 +59,12 @@
                         <td id="vendor-payments" class="text-right" style="color: var(--danger);">₹0.00</td>
                     </tr>
                     <tr style="background: rgba(239, 68, 68, 0.1);">
-                        <td><strong>Expenses (Period):</strong></td>
-                        <td id="expenses" class="text-right" style="color: var(--danger);">₹0.00</td>
+                        <td><strong>Expenses - Credit (Period):</strong></td>
+                        <td id="expenses-credit" class="text-right" style="color: var(--danger);">₹0.00</td>
+                    </tr>
+                    <tr style="background: rgba(239, 68, 68, 0.1);">
+                        <td><strong>Expenses - Cash/UPI/Bank (Period):</strong></td>
+                        <td id="expenses-paid" class="text-right" style="color: var(--danger);">₹0.00</td>
                     </tr>
                     <tr style="background: var(--bg-tertiary);">
                         <td><strong>Closing Balance:</strong></td>
@@ -130,6 +135,12 @@
     }
 
     // Set date range helper functions
+    function setToday() {
+        const today = new Date();
+        document.getElementById('from-date').value = formatDateLocal(today);
+        document.getElementById('to-date').value = formatDateLocal(today);
+    }
+
     function setDateRange(days) {
         const toDate = new Date();
         const fromDate = new Date();
@@ -181,7 +192,8 @@
             document.getElementById('opening-balance').textContent = formatCurrency(data.opening_balance);
             document.getElementById('client-receipts').textContent = formatCurrency(data.client_receipts);
             document.getElementById('vendor-payments').textContent = formatCurrency(data.vendor_payments);
-            document.getElementById('expenses').textContent = formatCurrency(data.expenses);
+            document.getElementById('expenses-credit').textContent = formatCurrency(data.expenses_credit || 0);
+            document.getElementById('expenses-paid').textContent = formatCurrency(data.expenses_paid || 0);
             document.getElementById('closing-balance').textContent = formatCurrency(data.closing_balance);
 
             // Update transactions

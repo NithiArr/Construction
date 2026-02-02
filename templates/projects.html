@@ -197,8 +197,7 @@
                             <th>Invoice No.</th>
                             <th>Date</th>
                             <th>Amount</th>
-                            <th>Paid</th>
-                            <th>Outstanding</th>
+                            <th>Payment Mode</th>
                         </tr>
                     </thead>
                     <tbody id="purchase-history-tbody"></tbody>
@@ -626,7 +625,7 @@
             // Render purchase history
             const purchasesTbody = document.getElementById('purchase-history-tbody');
             if (data.purchase_history.length === 0) {
-                purchasesTbody.innerHTML = '<tr><td colspan="6" class="text-center">No purchases found</td></tr>';
+                purchasesTbody.innerHTML = '<tr><td colspan="5" class="text-center">No purchases found</td></tr>';
             } else {
                 purchasesTbody.innerHTML = data.purchase_history.map(p => `
                     <tr>
@@ -634,8 +633,7 @@
                         <td>${p.invoice_number || '-'}</td>
                         <td>${formatDate(p.invoice_date)}</td>
                         <td>${formatCurrency(p.amount)}</td>
-                        <td>${formatCurrency(p.paid)}</td>
-                        <td><strong>${formatCurrency(p.balance)}</strong></td>
+                        <td><span class="status-badge ${p.payment_mode === 'CREDIT' ? 'status-on_hold' : 'status-completed'}">${p.payment_mode}</span></td>
                     </tr>
                 `).join('');
             }

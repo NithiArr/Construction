@@ -44,6 +44,15 @@
                 <button class="modal-close" onclick="closeVendorModal()">&times;</button>
             </div>
             <div class="modal-body">
+                <!-- Project Filter -->
+                <div class="mb-3" style="display: flex; align-items: center; gap: 1rem;">
+                    <label for="project-filter" style="margin: 0; font-weight: 500;">Filter by Project:</label>
+                    <select id="project-filter" class="form-control" style="max-width: 300px;"
+                        onchange="filterByProject()">
+                        <option value="">All Projects</option>
+                    </select>
+                </div>
+
                 <!-- Purchase History -->
                 <h4 class="mb-2">Purchase History</h4>
                 <div class="table-container mb-3">
@@ -119,18 +128,46 @@
     `).join('');
     }
 
+    let allPurchases = [];  // Store all purchases for filtering
+    let allMaterials = [];   // Store all materials for filtering
+    let currentVendorId = null;
+
     // Show vendor details
     async function showVendorDetails(vendorId, vendorName) {
+        currentVendorId = vendorId;
         document.getElementById('vendor-modal-title').textContent = vendorName;
         document.getElementById('vendor-modal').classList.add('active');
 
         // Load purchase history
         try {
             const response = await fetch(`/dashboard/api/vendor-purchase-history/${vendorId}`);
-            const purchases = await response.json();
+            allPurchases = await response.json();
 
-            const tbody = document.getElementById('purchase-history-tbody');
-            tbody.innerHTML = purchases.map(p => `
+            // Populate project filter
+            const projectFilter = document.getElementById('project-filter');
+            const projects = [...new Set(allPurchases.map(p => p.project_name))].sort();
+            projectFilter.innerHTML = '<option value="">All Projects</option>' +
+                projects.map(proj => `<option value="${proj}">${proj}</option>`).join('');
+
+            renderPurchaseHistory(allPurchases);
+        } catch (error) {
+            console.error('Error loading purchase history:', error);
+        }
+
+        // Load material summary
+        try {
+            const response = await fetch(`/dashboard/api/vendor-material-summary/${vendorId}`);
+            allMaterials = await response.json();
+            renderMaterialSummary(allMaterials);
+        } catch (error) {
+            console.error('Error loading material summary:', error);
+        }
+    }
+
+    // Render purchase history table
+    function renderPurchaseHistory(purchases) {
+        const tbody = document.getElementById('purchase-history-tbody');
+        tbody.innerHTML = purchases.map(p => `
             <tr>
                 <td>${p.project_name}</td>
                 <td>${p.invoice_number || '-'}</td>
@@ -140,25 +177,40 @@
                 <td><strong>${formatCurrency(p.balance)}</strong></td>
             </tr>
         `).join('');
-        } catch (error) {
-            console.error('Error loading purchase history:', error);
-        }
+    }
 
-        // Load material summary
-        try {
-            const response = await fetch(`/dashboard/api/vendor-material-summary/${vendorId}`);
-            const materials = await response.json();
-
-            const tbody = document.getElementById('material-summary-tbody');
-            tbody.innerHTML = materials.map(m => `
+    // Render material summary table
+    function renderMaterialSummary(materials) {
+        const tbody = document.getElementById('material-summary-tbody');
+        tbody.innerHTML = materials.map(m => `
             <tr>
                 <td><strong>${m.material}</strong></td>
                 <td>${m.total_quantity.toFixed(2)}</td>
                 <td>${formatCurrency(m.total_amount)}</td>
             </tr>
         `).join('');
+    }
+
+    // Filter by project
+    async function filterByProject() {
+        const selectedProject = document.getElementById('project-filter').value;
+
+        // Filter purchases
+        const filteredPurchases = selectedProject
+            ? allPurchases.filter(p => p.project_name === selectedProject)
+            : allPurchases;
+        renderPurchaseHistory(filteredPurchases);
+
+        // Re-fetch material summary with project filter
+        try {
+            const url = selectedProject
+                ? `/dashboard/api/vendor-material-summary/${currentVendorId}?project=${encodeURIComponent(selectedProject)}`
+                : `/dashboard/api/vendor-material-summary/${currentVendorId}`;
+            const response = await fetch(url);
+            const materials = await response.json();
+            renderMaterialSummary(materials);
         } catch (error) {
-            console.error('Error loading material summary:', error);
+            console.error('Error filtering materials:', error);
         }
     }
 

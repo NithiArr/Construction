@@ -65,10 +65,10 @@ def get_owner_kpis():
         float(e.amount) for p in projects for e in p.expenses
     ])
     
-    # Calculate Material Purchases only (for vendor payables)
-    total_material_purchases = sum([
+    # Calculate CREDIT Material Purchases (for outstanding)
+    total_credit_purchases = sum([
         float(e.amount) for p in projects for e in p.expenses
-        if e.category == 'Material Purchase'
+        if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
     ])
     
     # Calculate total vendor payments made
@@ -81,9 +81,9 @@ def get_owner_kpis():
         float(cp.amount) for p in projects for cp in p.client_payments
     ])
     
-    # FIXED LOGIC:
-    # Vendor Outstanding (Payables) = What we owe vendors
-    vendor_outstanding = total_material_purchases - total_vendor_payments
+    # Vendor Outstanding = Only CREDIT purchases - vendor payments
+    # CASH/UPI/BANK already paid, not included in outstanding
+    vendor_outstanding = total_credit_purchases - total_vendor_payments
     
     # Client Outstanding (Receivables) = What clients owe us
     client_outstanding = total_spent - total_received
@@ -127,10 +127,10 @@ def get_status_wise_overview():
         # Calculate project financials (all expenses)
         spent = sum([float(e.amount) for e in project.expenses])
         
-        # Material purchases only
-        material_purchases = sum([
+        # CREDIT material purchases only (for outstanding)
+        credit_purchases = sum([
             float(e.amount) for e in project.expenses
-            if e.category == 'Material Purchase'
+            if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
         ])
         
         # Vendor payments made
@@ -139,8 +139,8 @@ def get_status_wise_overview():
         # Client payments received
         received = sum([float(cp.amount) for cp in project.client_payments])
         
-        # Fixed calculations
-        vendor_outstanding = material_purchases - vendor_payments
+        # Only CREDIT purchases count as outstanding
+        vendor_outstanding = credit_purchases - vendor_payments
         client_outstanding = spent - received
         
         status_data[status]['count'] += 1
@@ -164,10 +164,10 @@ def get_project_financial_table():
         # Calculate financials
         amount_spent = sum([float(e.amount) for e in project.expenses])
         
-        # Material purchases only
-        material_purchases = sum([
+        # CREDIT material purchases only (for outstanding)
+        credit_purchases = sum([
             float(e.amount) for e in project.expenses
-            if e.category == 'Material Purchase'
+            if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
         ])
         
         # Vendor payments made for this project
@@ -176,8 +176,8 @@ def get_project_financial_table():
         # Client payments received
         amount_received = sum([float(cp.amount) for cp in project.client_payments])
         
-        # Fixed calculations
-        vendor_outstanding = material_purchases - vendor_payments_made  # What we owe vendors
+        # Only CREDIT purchases count as outstanding
+        vendor_outstanding = credit_purchases - vendor_payments_made  # What we owe vendors
         client_outstanding = amount_spent - amount_received  # What client owes us
         
         budget = float(project.budget or 0)
@@ -217,16 +217,20 @@ def get_vendor_summary():
     data = []
     
     for vendor in vendors:
-        # Total purchases (Expenses linked to this vendor)
-        # Note: Regular expenses usually don't have vendor_id, but if they do, they count.
-        # Strict logic: Category 'Material Purchase' or any request with vendor_id.
+        # All purchases for display
         total_purchases = sum([float(e.amount) for e in vendor.expenses])
         
-        # Total paid
+        # CREDIT purchases from this vendor (for outstanding)
+        total_credit_purchases = sum([
+            float(e.amount) for e in vendor.expenses
+            if e.payment_mode == 'CREDIT'
+        ])
+        
+        # Total paid to this vendor
         total_paid = sum([float(pay.amount) for pay in vendor.payments])
         
-        # Outstanding
-        outstanding = total_purchases - total_paid
+        # Outstanding = Only CREDIT purchases - payments
+        outstanding = total_credit_purchases - total_paid
         
         data.append({
             'vendor_id': vendor.vendor_id,
@@ -268,14 +272,19 @@ def get_vendor_purchase_history(vendor_id):
 @dashboard_bp.route('/api/vendor-material-summary/<int:vendor_id>', methods=['GET'])
 @login_required
 def get_vendor_material_summary(vendor_id):
-    """Get material-wise summary for a vendor"""
+    """Get material-wise summary for a vendor (optionally filtered by project)"""
+    from flask import request
     
     vendor = company_filter(Vendor.query).filter_by(vendor_id=vendor_id).first_or_404()
+    project_name = request.args.get('project', None)
     
     # Aggregate by material
     material_data = {}
     
     for expense in vendor.expenses:
+        # Filter by project if specified
+        if project_name and expense.project.name != project_name:
+            continue
         # Check items (ExpenseItems)
         for item in expense.items:
             material = item.item_name
@@ -319,8 +328,17 @@ def get_project_payment_details(project_id):
     for expense in project.expenses:
         if expense.category == 'Material Purchase':
             # It's a purchase
-            paid = sum([float(p.amount) for p in expense.payments])
-            balance = float(expense.amount) - paid
+            vendor_payments = sum([float(p.amount) for p in expense.payments])
+            
+            # For DISPLAY in table: CASH/UPI/BANK show as fully paid
+            if expense.payment_mode in ['CASH', 'UPI', 'BANK']:
+                # Already paid at source - show as fully paid
+                displayed_paid = float(expense.amount)
+                displayed_balance = 0
+            else:
+                # CREDIT - show actual payments and balance
+                displayed_paid = vendor_payments
+                displayed_balance = float(expense.amount) - vendor_payments
             
             purchase_history.append({
                 'purchase_id': expense.expense_id,
@@ -329,8 +347,9 @@ def get_project_payment_details(project_id):
                 'invoice_date': expense.expense_date.isoformat(),
                 'subcategory': expense.subcategory,
                 'amount': float(expense.amount),
-                'paid': paid,
-                'balance': balance
+                'payment_mode': expense.payment_mode,
+                'paid': displayed_paid,
+                'balance': displayed_balance
             })
             total_purchases_amount += float(expense.amount)
             
@@ -376,8 +395,17 @@ def get_project_payment_details(project_id):
     total_received = sum([float(cp.amount) for cp in project.client_payments])
     
     total_vendor_payments = sum([float(p.amount) for p in project.payments])
-    vendor_outstanding = total_purchases_amount - total_vendor_payments  # What we owe vendors
-    client_outstanding = total_spent - total_received  # What client owes us
+    
+    # Calculate CREDIT purchases only (for outstanding)
+    total_credit_purchases = sum([
+        float(e.amount) for e in project.expenses
+        if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
+    ])
+    
+    # Vendor Outstanding = Only CREDIT purchases - vendor payments
+    # CASH/UPI/BANK are already paid, so NOT included in outstanding
+    vendor_outstanding = total_credit_purchases - total_vendor_payments
+    client_outstanding = total_spent - total_received
     
     return jsonify({
         'project_name': project.name,
@@ -391,8 +419,8 @@ def get_project_payment_details(project_id):
             'total_expenses': total_expenses_amount,
             'total_spent': total_spent,
             'total_received': total_received,
-            'vendor_outstanding': vendor_outstanding,  # What we owe vendors
-            'client_outstanding': client_outstanding,  # What clients owe us
+            'vendor_outstanding': vendor_outstanding,
+            'client_outstanding': client_outstanding,
             'total_vendor_payments': total_vendor_payments
         }
     })
@@ -484,6 +512,17 @@ def get_daily_cash_balance():
     total_expenses_outflow = sum([t['amount'] for t in period_expenses])
     total_payments_outflow = sum([t['amount'] for t in period_payments])
     
+    # Split expenses by payment mode
+    expenses_credit = sum([
+        float(e.amount) for e in project.expenses
+        if from_date <= e.expense_date <= to_date and e.payment_mode == 'CREDIT'
+    ])
+    
+    expenses_paid = sum([
+        float(e.amount) for e in project.expenses
+        if from_date <= e.expense_date <= to_date and e.payment_mode in ['CASH', 'UPI', 'BANK']
+    ])
+    
     # Closing balance
     closing_balance = opening_balance + total_client_receipts - total_expenses_outflow - total_payments_outflow
     
@@ -498,6 +537,8 @@ def get_daily_cash_balance():
         'opening_balance': opening_balance,
         'client_receipts': total_client_receipts,
         'expenses': total_expenses_outflow,
+        'expenses_credit': expenses_credit,  # CREDIT expenses
+        'expenses_paid': expenses_paid,      # CASH/UPI/BANK expenses
         'vendor_payments': total_payments_outflow,
         'closing_balance': closing_balance,
         'transactions': all_transactions

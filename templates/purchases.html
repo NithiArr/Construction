@@ -74,8 +74,8 @@
 
                 <div class="grid grid-2">
                     <div class="form-group">
-                        <label class="form-label">Invoice Number *</label>
-                        <input type="text" id="purchase-invoice" class="form-control" required>
+                        <label class="form-label">Invoice Number</label>
+                        <input type="text" id="purchase-invoice" class="form-control">
                     </div>
 
                     <div class="form-group">
@@ -332,28 +332,24 @@
 
             // Check if items exist and is an array
             if (expense.items && Array.isArray(expense.items) && expense.items.length > 0) {
+                // First, create all item rows
+                expense.items.forEach(() => {
+                    addItem(); // Add a row for each item
+                });
+
+                // Then populate the values
+                const itemElements = container.querySelectorAll('.purchase-item');
                 expense.items.forEach((item, index) => {
-                    if (index > 0) addItem(); // Add rows for additional items
-                    const items = container.querySelectorAll('.purchase-item');
-                    const currentItem = items[index];
-                    if (currentItem) {
-                        currentItem.querySelector('.item-name').value = item.item_name || '';
-                        currentItem.querySelector('.item-quantity').value = item.quantity || 0;
-                        currentItem.querySelector('.item-price').value = item.unit_price || 0;
-                        currentItem.querySelector('.item-total').value = item.total_price || 0;
+                    if (itemElements[index]) {
+                        itemElements[index].querySelector('.item-name').value = item.item_name || '';
+                        itemElements[index].querySelector('.item-quantity').value = item.quantity || 0;
+                        itemElements[index].querySelector('.item-price').value = item.unit_price || 0;
+                        itemElements[index].querySelector('.item-total').value = item.total_price || 0;
                     }
                 });
             } else {
                 // Add default empty item if no items
-                const itemHtml = `
-                <div class="purchase-item mb-2" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 0.5rem; align-items: center;">
-                    <input type="text" class="form-control item-name" placeholder="Item Name" required>
-                    <input type="number" class="form-control item-quantity" placeholder="Qty" required min="0" step="0.01">
-                    <input type="number" class="form-control item-price" placeholder="Unit Price" required min="0" step="0.01">
-                    <input type="text" class="form-control item-total" placeholder="Total" readonly>
-                    <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)" style="padding: 0.5rem; min-width: 40px;">−</button>
-                </div>`;
-                container.innerHTML = itemHtml;
+                addItem();
             }
 
             attachItemCalculators();
