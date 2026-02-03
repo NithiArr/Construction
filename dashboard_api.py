@@ -251,11 +251,34 @@ def get_vendor_purchase_history(vendor_id):
     
     data = []
     
-    # Iterate over expenses linked to vendor (previously purchases)
+    # Iterate over expenses linked to vendor (material purchases)
     for expense in vendor.expenses:
-        # Calculate paid amount for this purchase/expense
-        paid = sum([float(p.amount) for p in expense.payments])
-        balance = float(expense.amount) - paid
+        # Calculate paid and balance based on payment mode
+        if expense.payment_mode in ['CASH', 'UPI', 'BANK']:
+            # Already paid at time of purchase
+            paid = float(expense.amount)
+            balance = 0
+        else:
+            # CREDIT - get vendor payments made for this vendor on this project
+            project_vendor_payments = sum([
+                float(p.amount) for p in vendor.payments
+                if p.project_id == expense.project_id
+            ])
+            
+            # Get total CREDIT purchases for this vendor on this project
+            project_credit_purchases = sum([
+                float(e.amount) for e in vendor.expenses
+                if e.project_id == expense.project_id and e.payment_mode == 'CREDIT'
+            ])
+            
+            # Distribute payments proportionally across CREDIT purchases in this project
+            if project_credit_purchases > 0:
+                proportion = float(expense.amount) / project_credit_purchases
+                paid = project_vendor_payments * proportion
+            else:
+                paid = 0
+            
+            balance = float(expense.amount) - paid
         
         data.append({
             'purchase_id': expense.expense_id,
@@ -263,6 +286,7 @@ def get_vendor_purchase_history(vendor_id):
             'invoice_number': expense.invoice_number or '-',
             'invoice_date': expense.expense_date.isoformat(),
             'amount': float(expense.amount),
+            'payment_mode': expense.payment_mode,
             'paid': paid,
             'balance': balance
         })
