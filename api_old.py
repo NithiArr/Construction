@@ -1,8 +1,9 @@
-from flask import Blueprint, request, jsonify, abort
+from flask import Blueprint, request, jsonify
 from flask_login import login_required, current_user
-from models_mongo import Project, Vendor, Expense, ExpenseItem, Payment, ClientPayment
+from models import db, Project, Vendor, Expense, ExpenseItem, Payment, ClientPayment
 from functools import wraps
 from datetime import datetime
+from sqlalchemy import func
 
 api_bp = Blueprint('api', __name__)
 
@@ -19,20 +20,18 @@ def role_required(*roles):
         return decorated_function
     return decorator
 
-def get_or_404(model, **kwargs):
-    """Get object or return 404"""
-    obj = model.objects(**kwargs).first()
-    if not obj:
-        abort(404)
-    return obj
+def company_data_filter(query):
+    """Filter query by current user's company"""
+    return query.filter_by(company_id=current_user.company_id)
 
+# ==================== PROJECTS API ====================
 @api_bp.route('/projects', methods=['GET'])
 @login_required
 def get_projects():
     """Get all projects for user's company"""
-    projects = Project.objects(company=current_user.company)
+    projects = company_data_filter(Project.query).all()
     return jsonify([{
-        'project_id': str(p.id),
+        'project_id': p.project_id,
         'name': p.name,
         'location': p.location,
         'start_date': p.start_date.isoformat() if p.start_date else None,
@@ -42,13 +41,13 @@ def get_projects():
         'created_at': p.created_at.isoformat()
     } for p in projects])
 
-@api_bp.route('/projects/<project_id>', methods=['GET'])
+@api_bp.route('/projects/<int:project_id>', methods=['GET'])
 @login_required
 def get_project(project_id):
     """Get specific project"""
-    project = get_or_404(Project, id=project_id, company=current_user.company)
+    project = company_data_filter(Project.query).filter_by(project_id=project_id).first_or_404()
     return jsonify({
-        'project_id': str(project.id),
+        'project_id': project.project_id,
         'name': project.name,
         'location': project.location,
         'start_date': project.start_date.isoformat() if project.start_date else None,
@@ -59,13 +58,13 @@ def get_project(project_id):
 
 @api_bp.route('/projects', methods=['POST'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'MANAGER')
+@role_required('ADMIN', 'MANAGER')
 def create_project():
     """Create new project"""
     data = request.get_json()
     
     project = Project(
-        company=current_user.company,
+        company_id=current_user.company_id,
         name=data['name'],
         location=data.get('location'),
         start_date=datetime.fromisoformat(data['start_date']) if data.get('start_date') else None,
@@ -73,16 +72,18 @@ def create_project():
         budget=data.get('budget', 0),
         status=data.get('status', 'PLANNING')
     )
-    project.save()
     
-    return jsonify({'message': 'Project created', 'project_id': str(project.id)}), 201
+    db.session.add(project)
+    db.session.commit()
+    
+    return jsonify({'message': 'Project created', 'project_id': project.project_id}), 201
 
-@api_bp.route('/projects/<project_id>', methods=['PUT'])
+@api_bp.route('/projects/<int:project_id>', methods=['PUT'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'MANAGER')
+@role_required('ADMIN', 'MANAGER')
 def update_project(project_id):
     """Update project"""
-    project = get_or_404(Project, id=project_id, company=current_user.company)
+    project = company_data_filter(Project.query).filter_by(project_id=project_id).first_or_404()
     data = request.get_json()
     
     project.name = data.get('name', project.name)
@@ -91,17 +92,18 @@ def update_project(project_id):
     project.end_date = datetime.fromisoformat(data['end_date']) if data.get('end_date') else project.end_date
     project.budget = data.get('budget', project.budget)
     project.status = data.get('status', project.status)
-    project.save()
     
+    db.session.commit()
     return jsonify({'message': 'Project updated'})
 
-@api_bp.route('/projects/<project_id>', methods=['DELETE'])
+@api_bp.route('/projects/<int:project_id>', methods=['DELETE'])
 @login_required
-@role_required('OWNER', 'ADMIN')
+@role_required('ADMIN')
 def delete_project(project_id):
     """Delete project"""
-    project = get_or_404(Project, id=project_id, company=current_user.company)
-    project.delete()
+    project = company_data_filter(Project.query).filter_by(project_id=project_id).first_or_404()
+    db.session.delete(project)
+    db.session.commit()
     return jsonify({'message': 'Project deleted'})
 
 # ==================== VENDORS API ====================
@@ -109,9 +111,9 @@ def delete_project(project_id):
 @login_required
 def get_vendors():
     """Get all vendors"""
-    vendors = Vendor.objects(company=current_user.company)
+    vendors = company_data_filter(Vendor.query).all()
     return jsonify([{
-        'vendor_id': str(v.id),
+        'vendor_id': v.vendor_id,
         'name': v.name,
         'phone': v.phone,
         'email': v.email,
@@ -121,45 +123,48 @@ def get_vendors():
 
 @api_bp.route('/vendors', methods=['POST'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'MANAGER')
+@role_required('ADMIN', 'MANAGER')
 def create_vendor():
     """Create new vendor"""
     data = request.get_json()
     
     vendor = Vendor(
-        company=current_user.company,
+        company_id=current_user.company_id,
         name=data['name'],
         phone=data.get('phone'),
         email=data.get('email'),
         gst_number=data.get('gst_number')
     )
-    vendor.save()
     
-    return jsonify({'message': 'Vendor created', 'vendor_id': str(vendor.id)}), 201
+    db.session.add(vendor)
+    db.session.commit()
+    
+    return jsonify({'message': 'Vendor created', 'vendor_id': vendor.vendor_id}), 201
 
-@api_bp.route('/vendors/<vendor_id>', methods=['PUT'])
+@api_bp.route('/vendors/<int:vendor_id>', methods=['PUT'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'MANAGER')
+@role_required('ADMIN', 'MANAGER')
 def update_vendor(vendor_id):
     """Update vendor"""
-    vendor = get_or_404(Vendor, id=vendor_id, company=current_user.company)
+    vendor = company_data_filter(Vendor.query).filter_by(vendor_id=vendor_id).first_or_404()
     data = request.get_json()
     
     vendor.name = data.get('name', vendor.name)
     vendor.phone = data.get('phone', vendor.phone)
     vendor.email = data.get('email', vendor.email)
     vendor.gst_number = data.get('gst_number', vendor.gst_number)
-    vendor.save()
     
+    db.session.commit()
     return jsonify({'message': 'Vendor updated'})
 
-@api_bp.route('/vendors/<vendor_id>', methods=['DELETE'])
+@api_bp.route('/vendors/<int:vendor_id>', methods=['DELETE'])
 @login_required
-@role_required('OWNER', 'ADMIN')
+@role_required('ADMIN')
 def delete_vendor(vendor_id):
     """Delete vendor"""
-    vendor = get_or_404(Vendor, id=vendor_id, company=current_user.company)
-    vendor.delete()
+    vendor = company_data_filter(Vendor.query).filter_by(vendor_id=vendor_id).first_or_404()
+    db.session.delete(vendor)
+    db.session.commit()
     return jsonify({'message': 'Vendor deleted'})
 
 # ==================== PURCHASES API (Mapped to Expenses) ====================
@@ -167,13 +172,14 @@ def delete_vendor(vendor_id):
 @login_required
 def get_purchases():
     """Get all purchases (Expenses with category 'Material Purchase')"""
-    purchases = Expense.objects(company=current_user.company, category='Material Purchase')
+    # Query Expenses where category is 'Material Purchase'
+    purchases = company_data_filter(Expense.query).filter_by(category='Material Purchase').all()
     return jsonify([{
-        'purchase_id': str(p.id),
-        'expense_id': str(p.id),
-        'project_id': str(p.project.id),
+        'purchase_id': p.expense_id, # Map expense_id to purchase_id
+        'expense_id': p.expense_id,  # Also include expense_id for edit/delete
+        'project_id': p.project_id,
         'project_name': p.project.name,
-        'vendor_id': str(p.vendor.id) if p.vendor else None,
+        'vendor_id': p.vendor_id,
         'vendor_name': p.vendor.name if p.vendor else None,
         'invoice_number': p.invoice_number,
         'invoice_date': p.expense_date.isoformat(),
@@ -190,54 +196,56 @@ def get_purchases():
 
 @api_bp.route('/purchases', methods=['POST'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'MANAGER')
+@role_required('ADMIN', 'MANAGER')
 def create_purchase():
     """Create new purchase (Expense + Items)"""
     data = request.get_json()
     
+    # Determine subcategory from request (user should provide it, or we infer)
+    # The requirement says subcategory will tell "what the material purchase done"
     subcategory = data.get('subcategory')
     if not subcategory and data.get('items'):
+        # Fallback: use the first item name as subcategory
         subcategory = data['items'][0]['item_name']
     
-    # Get project and vendor references
-    project = get_or_404(Project, id=data['project_id'])
-    vendor = get_or_404(Vendor, id=data['vendor_id']) if data.get('vendor_id') else None
-    
-    # Create embedded items
-    items = [
-        ExpenseItem(
-            item_name=item_data['item_name'],
-            quantity=item_data['quantity'],
-            unit_price=item_data['unit_price'],
-            total_price=item_data['total_price']
-        )
-        for item_data in data.get('items', [])
-    ]
-    
     purchase = Expense(
-        company=current_user.company,
-        project=project,
-        vendor=vendor,
+        company_id=current_user.company_id,
+        project_id=data['project_id'],
+        vendor_id=data['vendor_id'],
         category='Material Purchase',
         subcategory=subcategory,
         invoice_number=data.get('invoice_number'),
         expense_date=datetime.fromisoformat(data['invoice_date']),
         amount=data['total_amount'],
         payment_mode=data['payment_type'],
-        description=f"Invoice #{data.get('invoice_number')}",
-        items=items
+        description=f"Invoice #{data.get('invoice_number')}"
     )
-    purchase.save()
     
-    return jsonify({'message': 'Purchase created', 'purchase_id': str(purchase.id)}), 201
+    db.session.add(purchase)
+    db.session.flush()
+    
+    # Add expense items (formerly PurchaseItems)
+    for item_data in data.get('items', []):
+        item = ExpenseItem(
+            expense_id=purchase.expense_id,
+            item_name=item_data['item_name'],
+            quantity=item_data['quantity'],
+            unit_price=item_data['unit_price'],
+            total_price=item_data['total_price']
+        )
+        db.session.add(item)
+    
+    db.session.commit()
+    return jsonify({'message': 'Purchase created', 'purchase_id': purchase.expense_id}), 201
 
-@api_bp.route('/purchases/<purchase_id>', methods=['DELETE'])
+@api_bp.route('/purchases/<int:purchase_id>', methods=['DELETE'])
 @login_required
-@role_required('OWNER', 'ADMIN')
+@role_required('ADMIN')
 def delete_purchase(purchase_id):
     """Delete purchase (Expense)"""
-    purchase = get_or_404(Expense, id=purchase_id, company=current_user.company, category='Material Purchase')
-    purchase.delete()
+    purchase = company_data_filter(Expense.query).filter_by(expense_id=purchase_id, category='Material Purchase').first_or_404()
+    db.session.delete(purchase)
+    db.session.commit()
     return jsonify({'message': 'Purchase deleted'})
 
 # ==================== EXPENSES API ====================
@@ -245,10 +253,10 @@ def delete_purchase(purchase_id):
 @login_required
 def get_expenses():
     """Get all regular expenses"""
-    expenses = Expense.objects(company=current_user.company, category='Regular Expense')
+    expenses = company_data_filter(Expense.query).filter_by(category='Regular Expense').all()
     return jsonify([{
-        'expense_id': str(e.id),
-        'project_id': str(e.project.id),
+        'expense_id': e.expense_id,
+        'project_id': e.project_id,
         'project_name': e.project.name,
         'category': e.category,
         'subcategory': e.subcategory,
@@ -261,38 +269,38 @@ def get_expenses():
 
 @api_bp.route('/expenses', methods=['POST'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'ACCOUNTANT')
+@role_required('ADMIN', 'ACCOUNTANT')
 def create_expense():
     """Create new regular expense"""
     data = request.get_json()
     
-    project = get_or_404(Project, id=data['project_id'])
-    
     expense = Expense(
-        company=current_user.company,
-        project=project,
+        company_id=current_user.company_id,
+        project_id=data['project_id'],
         category='Regular Expense',
-        subcategory=data.get('subcategory'),
+        subcategory=data.get('subcategory'), # User provided subcategory
         amount=data['amount'],
         payment_mode=data['payment_mode'],
         expense_date=datetime.fromisoformat(data['expense_date']),
         description=data.get('description'),
         bill_url=data.get('bill_url')
     )
-    expense.save()
     
-    return jsonify({'message': 'Expense created', 'expense_id': str(expense.id)}), 201
+    db.session.add(expense)
+    db.session.commit()
+    
+    return jsonify({'message': 'Expense created', 'expense_id': expense.expense_id}), 201
 
-@api_bp.route('/expenses/<expense_id>', methods=['GET'])
+@api_bp.route('/expenses/<int:expense_id>', methods=['GET'])
 @login_required
 def get_expense(expense_id):
     """Get specific expense by ID"""
-    expense = get_or_404(Expense, id=expense_id, company=current_user.company)
+    expense = company_data_filter(Expense.query).filter_by(expense_id=expense_id).first_or_404()
     
     result = {
-        'expense_id': str(expense.id),
-        'project_id': str(expense.project.id),
-        'vendor_id': str(expense.vendor.id) if expense.vendor else None,
+        'expense_id': expense.expense_id,
+        'project_id': expense.project_id,
+        'vendor_id': expense.vendor_id,
         'category': expense.category,
         'subcategory': expense.subcategory,
         'amount': float(expense.amount),
@@ -303,6 +311,7 @@ def get_expense(expense_id):
         'bill_url': expense.bill_url
     }
     
+    # Include items if this is a purchase (Material Purchase)
     if expense.category == 'Material Purchase':
         result['items'] = [{
             'item_name': item.item_name,
@@ -313,52 +322,52 @@ def get_expense(expense_id):
     
     return jsonify(result)
 
-@api_bp.route('/expenses/<expense_id>', methods=['PUT'])
+@api_bp.route('/expenses/<int:expense_id>', methods=['PUT'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'ACCOUNTANT', 'MANAGER')
+@role_required('ADMIN', 'ACCOUNTANT', 'MANAGER')
 def update_expense(expense_id):
     """Update expense (works for both purchases and regular expenses)"""
-    expense = get_or_404(Expense, id=expense_id, company=current_user.company)
+    expense = company_data_filter(Expense.query).filter_by(expense_id=expense_id).first_or_404()
     data = request.get_json()
     
-    if data.get('project_id'):
-        expense.project = get_or_404(Project, id=data['project_id'])
-    if data.get('vendor_id'):
-        expense.vendor = get_or_404(Vendor, id=data['vendor_id'])
-    
+    # Update main expense fields
+    expense.project_id = data.get('project_id', expense.project_id)
+    expense.vendor_id = data.get('vendor_id', expense.vendor_id)
     expense.subcategory = data.get('subcategory', expense.subcategory)
     expense.amount = data.get('total_amount', data.get('amount', expense.amount))
     expense.payment_mode = data.get('payment_type', data.get('payment_mode', expense.payment_mode))
-    
-    if data.get('invoice_date') or data.get('expense_date'):
-        date_str = data.get('invoice_date', data.get('expense_date'))
-        expense.expense_date = datetime.fromisoformat(date_str)
-    
+    expense.expense_date = datetime.fromisoformat(data.get('invoice_date', data.get('expense_date', expense.expense_date.isoformat())))
     expense.invoice_number = data.get('invoice_number', expense.invoice_number)
     expense.description = data.get('description', expense.description)
     
-    # Update items if provided (for purchases)
+    # If this is a purchase (has items), update items
     if 'items' in data and expense.category == 'Material Purchase':
-        expense.items = [
-            ExpenseItem(
+        # Delete existing items
+        for item in expense.items:
+            db.session.delete(item)
+        
+        # Add new items
+        for item_data in data['items']:
+            item = ExpenseItem(
+                expense_id=expense.expense_id,
                 item_name=item_data['item_name'],
                 quantity=item_data['quantity'],
                 unit_price=item_data['unit_price'],
                 total_price=item_data['total_price']
             )
-            for item_data in data['items']
-        ]
+            db.session.add(item)
     
-    expense.save()
+    db.session.commit()
     return jsonify({'message': 'Expense updated'})
 
-@api_bp.route('/expenses/<expense_id>', methods=['DELETE'])
+@api_bp.route('/expenses/<int:expense_id>', methods=['DELETE'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'ACCOUNTANT')
+@role_required('ADMIN', 'ACCOUNTANT')
 def delete_expense(expense_id):
     """Delete expense"""
-    expense = get_or_404(Expense, id=expense_id, company=current_user.company)
-    expense.delete()
+    expense = company_data_filter(Expense.query).filter_by(expense_id=expense_id).first_or_404()
+    db.session.delete(expense)
+    db.session.commit()
     return jsonify({'message': 'Expense deleted'})
 
 # ==================== PAYMENTS API ====================
@@ -366,15 +375,15 @@ def delete_expense(expense_id):
 @login_required
 def get_payments():
     """Get all vendor payments"""
-    payments = Payment.objects(company=current_user.company)
+    payments = company_data_filter(Payment.query).all()
     return jsonify([{
-        'payment_id': str(p.id),
-        'vendor_id': str(p.vendor.id),
+        'payment_id': p.payment_id,
+        'vendor_id': p.vendor_id,
         'vendor_name': p.vendor.name,
-        'project_id': str(p.project.id),
+        'project_id': p.project_id,
         'project_name': p.project.name,
-        'purchase_id': str(p.expense.id) if p.expense else None,
-        'expense_id': str(p.expense.id) if p.expense else None,
+        'purchase_id': p.expense_id, # Frontend expects purchase_id, map to expense_id
+        'expense_id': p.expense_id,
         'amount': float(p.amount),
         'payment_date': p.payment_date.isoformat(),
         'payment_mode': p.payment_mode
@@ -382,35 +391,34 @@ def get_payments():
 
 @api_bp.route('/payments', methods=['POST'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'ACCOUNTANT')
+@role_required('ADMIN', 'ACCOUNTANT')
 def create_payment():
     """Create new vendor payment"""
     data = request.get_json()
     
-    vendor = get_or_404(Vendor, id=data['vendor_id'])
-    project = get_or_404(Project, id=data['project_id'])
-    expense = get_or_404(Expense, id=data['purchase_id']) if data.get('purchase_id') else None
-    
     payment = Payment(
-        company=current_user.company,
-        vendor=vendor,
-        project=project,
-        expense=expense,
+        company_id=current_user.company_id,
+        vendor_id=data['vendor_id'],
+        project_id=data['project_id'],
+        expense_id=data.get('purchase_id'), # Map purchase_id from frontend to expense_id
         amount=data['amount'],
         payment_date=datetime.fromisoformat(data['payment_date']),
         payment_mode=data['payment_mode']
     )
-    payment.save()
     
-    return jsonify({'message': 'Payment created', 'payment_id': str(payment.id)}), 201
+    db.session.add(payment)
+    db.session.commit()
+    
+    return jsonify({'message': 'Payment created', 'payment_id': payment.payment_id}), 201
 
-@api_bp.route('/payments/<payment_id>', methods=['DELETE'])
+@api_bp.route('/payments/<int:payment_id>', methods=['DELETE'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'ACCOUNTANT')
+@role_required('ADMIN', 'ACCOUNTANT')
 def delete_payment(payment_id):
     """Delete payment"""
-    payment = get_or_404(Payment, id=payment_id, company=current_user.company)
-    payment.delete()
+    payment = company_data_filter(Payment.query).filter_by(payment_id=payment_id).first_or_404()
+    db.session.delete(payment)
+    db.session.commit()
     return jsonify({'message': 'Payment deleted'})
 
 # ==================== CLIENT PAYMENTS API ====================
@@ -418,10 +426,10 @@ def delete_payment(payment_id):
 @login_required
 def get_client_payments():
     """Get all client payments"""
-    payments = ClientPayment.objects(company=current_user.company)
+    payments = company_data_filter(ClientPayment.query).all()
     return jsonify([{
-        'client_payment_id': str(p.id),
-        'project_id': str(p.project.id),
+        'client_payment_id': p.client_payment_id,
+        'project_id': p.project_id,
         'project_name': p.project.name,
         'amount': float(p.amount),
         'payment_date': p.payment_date.isoformat(),
@@ -432,31 +440,32 @@ def get_client_payments():
 
 @api_bp.route('/client-payments', methods=['POST'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'ACCOUNTANT')
+@role_required('ADMIN', 'ACCOUNTANT')
 def create_client_payment():
     """Create new client payment"""
     data = request.get_json()
     
-    project = get_or_404(Project, id=data['project_id'])
-    
     payment = ClientPayment(
-        company=current_user.company,
-        project=project,
+        company_id=current_user.company_id,
+        project_id=data['project_id'],
         amount=data['amount'],
         payment_date=datetime.fromisoformat(data['payment_date']),
         payment_mode=data['payment_mode'],
         reference_number=data.get('reference_number'),
         remarks=data.get('remarks')
     )
-    payment.save()
     
-    return jsonify({'message': 'Client payment created', 'client_payment_id': str(payment.id)}), 201
+    db.session.add(payment)
+    db.session.commit()
+    
+    return jsonify({'message': 'Client payment created', 'client_payment_id': payment.client_payment_id}), 201
 
-@api_bp.route('/client-payments/<payment_id>', methods=['DELETE'])
+@api_bp.route('/client-payments/<int:payment_id>', methods=['DELETE'])
 @login_required
-@role_required('OWNER', 'ADMIN', 'ACCOUNTANT')
+@role_required('ADMIN', 'ACCOUNTANT')
 def delete_client_payment(payment_id):
     """Delete client payment"""
-    payment = get_or_404(ClientPayment, id=payment_id, company=current_user.company)
-    payment.delete()
+    payment = company_data_filter(ClientPayment.query).filter_by(client_payment_id=payment_id).first_or_404()
+    db.session.delete(payment)
+    db.session.commit()
     return jsonify({'message': 'Client payment deleted'})

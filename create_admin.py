@@ -1,65 +1,68 @@
-import sqlite3
-from werkzeug.security import generate_password_hash
+"""
+Create initial admin user for MongoDB
+Run this script to create the first admin user in your system
+"""
+import os
+from dotenv import load_dotenv
+from mongoengine import connect
+from models_mongo import Company, User
 
-# Connect to database
-db_path = 'instance/construction_v2.db'
-conn = sqlite3.connect(db_path)
-cursor = conn.cursor()
+# Load environment variables
+load_dotenv()
 
-# Get the company ID (Sorgavasal)
-cursor.execute("SELECT company_id FROM company WHERE name = 'Sorgavasal'")
-company = cursor.fetchone()
-
-if not company:
-    print("Company not found! Please check database.")
-    exit()
-
-company_id = company[0]
-
-# Admin user details
-admin_email = "admin@sorgavasal.com"
-admin_password = "admin123"  # Simple password for testing
-admin_name = "Admin User"
-
-
-admin_role = "ADMIN"
-
-# Check if admin already exists
-cursor.execute("SELECT email FROM user WHERE email = ?", (admin_email,))
-existing = cursor.fetchone()
-
-if existing:
-    print(f"Admin user already exists with email: {admin_email}")
-else:
-    # Hash the password
-    password_hash = generate_password_hash(admin_password)
+def create_admin():
+    """Create initial admin user and company"""
     
-    # Insert new admin user
-    cursor.execute("""
-        INSERT INTO user (company_id, name, email, password_hash, role, created_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now'))
-    """, (company_id, admin_name, admin_email, password_hash, admin_role))
+    # Connect to MongoDB
+    mongodb_host = os.environ.get('MONGODB_HOST', 'mongodb://localhost:27017/construction_db')
+    print(f"Connecting to MongoDB...")
+    connect(host=mongodb_host)
+    print("Connected successfully!")
     
-    conn.commit()
-    print("=" * 60)
-    print("ADMIN ACCOUNT CREATED SUCCESSFULLY!")
-    print("=" * 60)
-    print(f"\nEmail:    {admin_email}")
-    print(f"Password: {admin_password}")
-    print(f"Role:     {admin_role}")
-    print(f"Company:  Sorgavasal")
-    print("\n" + "=" * 60)
-    print("LOGIN INSTRUCTIONS:")
-    print("=" * 60)
-    print("1. Go to: http://127.0.0.1:5000")
-    print("2. Enter the credentials above")
-    print("3. As ADMIN, you have FULL access to:")
-    print("   - Create/Edit/Delete Projects")
-    print("   - Manage Vendors")
-    print("   - Record Purchases")
-    print("   - Add Expenses")
-    print("   - Record Payments")
-    print("   - Manage Users")
-    print("=" * 60)
+    # Create company
+    company_name = input("\nEnter company name: ")
+    company_email = input("Enter company email: ")
+    company_phone = input("Enter company phone: ")
+    
+    company = Company(
+        name=company_name,
+        email=company_email,
+        phone=company_phone
+    )
+    company.save()
+    print(f"\n✓ Company '{company_name}' created successfully!")
+    
+    # Create admin user
+    admin_name = input("\nEnter admin name: ")
+    admin_email = input("Enter admin email: ")
+    admin_password = input("Enter admin password: ")
+    
+    admin = User(
+        company=company,
+        name=admin_name,
+        email=admin_email,
+        role='ADMIN'
+    )
+    admin.set_password(admin_password)
+    admin.save()
+    
+    print(f"\n✓ Admin user '{admin_name}' created successfully!")
+    print(f"\nCompany ID: {company.id}")
+    print(f"Admin User ID: {admin.id}")
+    print(f"\nYou can now login with:")
+    print(f"  Email: {admin_email}")
+    print(f"  Password: {admin_password}")
+    print("\nIMPORTANT: Save these credentials securely!")
 
-conn.close()
+if __name__ == '__main__':
+    print("=" * 50)
+    print("Construction Management System")
+    print("Initial Admin Setup")
+    print("=" * 50)
+    
+    try:
+        create_admin()
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()

@@ -18,7 +18,7 @@
                     <option value="">All Projects</option>
                 </select>
             </div>
-            <button class="btn btn-primary" onclick="openModal('add-purchase-modal')" style="margin-top: 1.5rem;">+ Add
+            <button class="btn btn-primary" onclick="prepareAddPurchase()" style="margin-top: 1.5rem;">+ Add
                 Purchase</button>
         </div>
     </div>
@@ -177,7 +177,7 @@
         if (projectId === '') {
             purchases = [...allPurchases];
         } else {
-            purchases = allPurchases.filter(p => p.project_id === parseInt(projectId));
+            purchases = allPurchases.filter(p => p.project_id === projectId);
         }
 
         renderPurchases();
@@ -204,8 +204,8 @@
                 <td><span class="badge">${p.payment_type}</span></td>
                 <td>${formatDate(p.invoice_date)}</td>
                 <td style="white-space: nowrap;">
-                    <button class="btn btn-sm btn-primary" onclick="editPurchase(${p.expense_id})" style="margin-right: 0.5rem;">Edit</button>
-                    <button class="btn btn-sm btn-danger" onclick="deletePurchase(${p.expense_id})">Delete</button>
+                    <button class="btn btn-sm btn-primary" onclick="editPurchase('${p.expense_id}')" style="margin-right: 0.5rem;">Edit</button>
+                    <button class="btn btn-sm btn-danger" onclick="deletePurchase('${p.expense_id}')">Delete</button>
                 </td>
             </tr>
         `;
@@ -297,8 +297,8 @@
         const isEdit = purchaseId !== '';
 
         const data = {
-            project_id: parseInt(document.getElementById('purchase-project').value),
-            vendor_id: parseInt(document.getElementById('purchase-vendor').value),
+            project_id: document.getElementById('purchase-project').value,
+            vendor_id: document.getElementById('purchase-vendor').value,
             subcategory: document.getElementById('purchase-subcategory').value,
             invoice_number: document.getElementById('purchase-invoice').value,
             invoice_date: document.getElementById('purchase-date').value,
@@ -408,6 +408,22 @@
             console.error('Error:', error);
             showNotification('Error deleting purchase', 'error');
         }
+    }
+
+    function prepareAddPurchase() {
+        resetForm('purchase-form');
+        document.getElementById('purchase-id').value = '';
+        document.getElementById('purchase-modal-title').textContent = 'Add Purchase Order';
+
+        // Reset items
+        const container = document.getElementById('items-container');
+        container.innerHTML = '';
+        addItem(); // Add one empty item
+
+        // Set default date
+        document.getElementById('purchase-date').value = new Date().toISOString().split('T')[0];
+
+        openModal('add-purchase-modal');
     }
 
     document.getElementById('purchase-date').value = new Date().toISOString().split('T')[0];

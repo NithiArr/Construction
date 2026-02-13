@@ -1,15 +1,10 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for
 from flask_login import login_required, current_user
-from models import db, Project, Vendor, Expense, ExpenseItem, Payment, ClientPayment
-from sqlalchemy import func
-from datetime import datetime, timedelta
-from decimal import Decimal
+from models_mongo import Project, Vendor, Expense, Payment, ClientPayment, ExpenseItem
+from datetime import datetime
+import collections
 
 dashboard_bp = Blueprint('dashboard', __name__)
-
-def company_filter(query):
-    """Filter by company"""
-    return query.filter_by(company_id=current_user.company_id)
 
 # ==================== DASHBOARD PAGES ====================
 @dashboard_bp.route('/main')
@@ -38,150 +33,94 @@ def daily_cash():
     """Daily cash balance page"""
     return render_template('daily_cash.html', user=current_user)
 
-# ==================== OWNER DASHBOARD KPIs ====================
+# ==================== HELPER FUNCTIONS ====================
+def get_project_financials(project):
+    """Calculate financials for a project"""
+    expenses = Expense.objects(project=project)
+    payments = Payment.objects(project=project)
+    client_payments = ClientPayment.objects(project=project)
+    
+    total_spent = sum(e.amount for e in expenses)
+    total_received = sum(cp.amount for cp in client_payments)
+    
+    # CREDIT Material Purchases
+    credit_purchases = sum(
+        e.amount for e in expenses 
+        if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
+    )
+    
+    # Vendor payments made
+    vendor_payments_total = sum(p.amount for p in payments)
+    
+    # Vendor Outstanding (Only for CREDIT purchases)
+    vendor_outstanding = credit_purchases - vendor_payments_total
+    if vendor_outstanding < 0: vendor_outstanding = 0
+    
+    # Client Outstanding (Receivables)
+    client_outstanding = total_spent - total_received
+    
+    return {
+        'total_spent': total_spent,
+        'total_received': total_received,
+        'credit_purchases': credit_purchases,
+        'vendor_payments': vendor_payments_total,
+        'vendor_outstanding': vendor_outstanding,
+        'client_outstanding': client_outstanding
+    }
+
+# ==================== API ENDPOINTS ====================
+
 @dashboard_bp.route('/api/owner-kpis', methods=['GET'])
 @login_required
 def get_owner_kpis():
     """Get high-level KPIs for owner dashboard"""
+    projects = Project.objects(company=current_user.company)
     
-    # Total projects
-    total_projects = company_filter(Project.query).count()
+    total_projects = projects.count()
+    total_budget = sum(p.budget for p in projects)
     
-    # Projects by status
-    status_counts = db.session.query(
-        Project.status,
-        func.count(Project.project_id)
-    ).filter_by(company_id=current_user.company_id).group_by(Project.status).all()
+    status_counts = collections.Counter(p.status for p in projects)
     
-    status_breakdown = {status: count for status, count in status_counts}
+    total_spent = 0
+    total_received = 0
+    total_vendor_payments = 0
+    total_credit_purchases = 0
     
-    # Financial aggregates
-    projects = company_filter(Project.query).all()
-    
-    total_budget = sum([float(p.budget or 0) for p in projects])
-    
-    # Calculate total spent (Regular Expenses + Material Purchases)
-    total_spent = sum([
-        float(e.amount) for p in projects for e in p.expenses
-    ])
-    
-    # Calculate CREDIT Material Purchases (for outstanding)
-    total_credit_purchases = sum([
-        float(e.amount) for p in projects for e in p.expenses
-        if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
-    ])
-    
-    # Calculate total vendor payments made
-    total_vendor_payments = sum([
-        float(payment.amount) for p in projects for payment in p.payments
-    ])
-    
-    # Calculate total received from clients
-    total_received = sum([
-        float(cp.amount) for p in projects for cp in p.client_payments
-    ])
-    
-    # Vendor Outstanding = Only CREDIT purchases - vendor payments
-    # CASH/UPI/BANK already paid, not included in outstanding
+    for project in projects:
+        fins = get_project_financials(project)
+        total_spent += fins['total_spent']
+        total_received += fins['total_received']
+        total_vendor_payments += fins['vendor_payments']
+        total_credit_purchases += fins['credit_purchases']
+        
     vendor_outstanding = total_credit_purchases - total_vendor_payments
-    
-    # Client Outstanding (Receivables) = What clients owe us
     client_outstanding = total_spent - total_received
-    
-    # Balance budget = Budget - Spent
     balance_budget = total_budget - total_spent
     
     return jsonify({
         'total_projects': total_projects,
-        'status_breakdown': status_breakdown,
+        'status_breakdown': dict(status_counts),
         'total_budget': total_budget,
         'total_spent': total_spent,
-        'total_material_purchases': total_material_purchases,
         'total_vendor_payments': total_vendor_payments,
         'total_received': total_received,
-        'vendor_outstanding': vendor_outstanding,  # What we owe vendors
-        'client_outstanding': client_outstanding,  # What clients owe us
+        'vendor_outstanding': vendor_outstanding,
+        'client_outstanding': client_outstanding,
         'balance_budget': balance_budget
     })
-
-@dashboard_bp.route('/api/status-wise-overview', methods=['GET'])
-@login_required
-def get_status_wise_overview():
-    """Get status-wise project overview"""
-    
-    projects = company_filter(Project.query).all()
-    
-    status_data = {}
-    
-    for project in projects:
-        status = project.status
-        if status not in status_data:
-            status_data[status] = {
-                'count': 0,
-                'total_budget': 0,
-                'total_spent': 0,
-                'vendor_outstanding': 0,  # What we owe vendors
-                'client_outstanding': 0   # What clients owe us
-            }
-        
-        # Calculate project financials (all expenses)
-        spent = sum([float(e.amount) for e in project.expenses])
-        
-        # CREDIT material purchases only (for outstanding)
-        credit_purchases = sum([
-            float(e.amount) for e in project.expenses
-            if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
-        ])
-        
-        # Vendor payments made
-        vendor_payments = sum([float(p.amount) for p in project.payments])
-        
-        # Client payments received
-        received = sum([float(cp.amount) for cp in project.client_payments])
-        
-        # Only CREDIT purchases count as outstanding
-        vendor_outstanding = credit_purchases - vendor_payments
-        client_outstanding = spent - received
-        
-        status_data[status]['count'] += 1
-        status_data[status]['total_budget'] += float(project.budget or 0)
-        status_data[status]['total_spent'] += spent
-        status_data[status]['vendor_outstanding'] += vendor_outstanding
-        status_data[status]['client_outstanding'] += client_outstanding
-    
-    return jsonify(status_data)
 
 @dashboard_bp.route('/api/project-financial-table', methods=['GET'])
 @login_required
 def get_project_financial_table():
     """Get detailed financial table for all projects"""
-    
-    projects = company_filter(Project.query).all()
-    
+    projects = Project.objects(company=current_user.company)
     data = []
     
     for project in projects:
-        # Calculate financials
-        amount_spent = sum([float(e.amount) for e in project.expenses])
+        fins = get_project_financials(project)
         
-        # CREDIT material purchases only (for outstanding)
-        credit_purchases = sum([
-            float(e.amount) for e in project.expenses
-            if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
-        ])
-        
-        # Vendor payments made for this project
-        vendor_payments_made = sum([float(p.amount) for p in project.payments])
-        
-        # Client payments received
-        amount_received = sum([float(cp.amount) for cp in project.client_payments])
-        
-        # Only CREDIT purchases count as outstanding
-        vendor_outstanding = credit_purchases - vendor_payments_made  # What we owe vendors
-        client_outstanding = amount_spent - amount_received  # What client owes us
-        
-        budget = float(project.budget or 0)
-        balance_budget = budget - amount_spent
+        amount_spent = fins['total_spent']
+        budget = project.budget
         
         # Color indicator
         if amount_spent > budget:
@@ -190,254 +129,196 @@ def get_project_financial_table():
             indicator = 'near'  # Yellow
         else:
             indicator = 'healthy'  # Green
-        
+            
         data.append({
-            'project_id': project.project_id,
+            'project_id': str(project.id),
             'project_name': project.name,
             'status': project.status,
             'budget': budget,
             'amount_spent': amount_spent,
-            'amount_received': amount_received,
-            'vendor_outstanding': vendor_outstanding,  # What we owe vendors
-            'client_outstanding': client_outstanding,  # What clients owe us
-            'balance_budget': balance_budget,
+            'amount_received': fins['total_received'],
+            'vendor_outstanding': fins['vendor_outstanding'],
+            'client_outstanding': fins['client_outstanding'],
+            'balance_budget': budget - amount_spent,
             'indicator': indicator
         })
-    
+        
     return jsonify(data)
 
-# ==================== VENDOR ANALYTICS ====================
 @dashboard_bp.route('/api/vendor-summary', methods=['GET'])
 @login_required
 def get_vendor_summary():
-    """Get vendor summary with purchases (Expenses) and payments"""
-    
-    vendors = company_filter(Vendor.query).all()
-    
+    """Get vendor summary"""
+    vendors = Vendor.objects(company=current_user.company)
     data = []
     
     for vendor in vendors:
-        # All purchases for display
-        total_purchases = sum([float(e.amount) for e in vendor.expenses])
+        expenses = Expense.objects(vendor=vendor)
+        payments = Payment.objects(vendor=vendor)
         
-        # CREDIT purchases from this vendor (for outstanding)
-        total_credit_purchases = sum([
-            float(e.amount) for e in vendor.expenses
-            if e.payment_mode == 'CREDIT'
-        ])
+        total_purchases = sum(e.amount for e in expenses)
+        total_paid = sum(p.amount for p in payments)
         
-        # Total paid to this vendor
-        total_paid = sum([float(pay.amount) for pay in vendor.payments])
+        # CREDIT purchases
+        credit_purchases = sum(e.amount for e in expenses if e.payment_mode == 'CREDIT')
         
-        # Outstanding = Only CREDIT purchases - payments
-        outstanding = total_credit_purchases - total_paid
+        # Outstanding
+        outstanding = credit_purchases - total_paid
         
         data.append({
-            'vendor_id': vendor.vendor_id,
+            'vendor_id': str(vendor.id),
             'vendor_name': vendor.name,
             'total_purchases': total_purchases,
             'total_paid': total_paid,
             'outstanding': outstanding
         })
-    
+        
     return jsonify(data)
 
-@dashboard_bp.route('/api/vendor-purchase-history/<int:vendor_id>', methods=['GET'])
+@dashboard_bp.route('/api/vendor-purchase-history/<vendor_id>', methods=['GET'])
 @login_required
 def get_vendor_purchase_history(vendor_id):
     """Get purchase history for a specific vendor"""
-    
-    vendor = company_filter(Vendor.query).filter_by(vendor_id=vendor_id).first_or_404()
-    
+    vendor = Vendor.objects(id=vendor_id, company=current_user.company).first()
+    if not vendor:
+        return jsonify({'error': 'Vendor not found'}), 404
+        
+    expenses = Expense.objects(vendor=vendor)
     data = []
     
-    # Iterate over expenses linked to vendor (material purchases)
-    for expense in vendor.expenses:
-        # Calculate paid and balance based on payment mode
+    for expense in expenses:
+        # Calculate paid amount for this specific expense
         if expense.payment_mode in ['CASH', 'UPI', 'BANK']:
-            # Already paid at time of purchase
-            paid = float(expense.amount)
+            paid = expense.amount
             balance = 0
         else:
-            # CREDIT - get vendor payments made for this vendor on this project
-            project_vendor_payments = sum([
-                float(p.amount) for p in vendor.payments
-                if p.project_id == expense.project_id
-            ])
+            # For CREDIT, we need to approximate based on total payments to vendor for this project
+            # This logic mimics the old SQLAlchemy version
+            project_payments = Payment.objects(vendor=vendor, project=expense.project)
+            total_project_payments = sum(p.amount for p in project_payments)
             
-            # Get total CREDIT purchases for this vendor on this project
-            project_credit_purchases = sum([
-                float(e.amount) for e in vendor.expenses
-                if e.project_id == expense.project_id and e.payment_mode == 'CREDIT'
-            ])
+            project_expenses = Expense.objects(vendor=vendor, project=expense.project, payment_mode='CREDIT')
+            total_project_credit = sum(e.amount for e in project_expenses)
             
-            # Distribute payments proportionally across CREDIT purchases in this project
-            if project_credit_purchases > 0:
-                proportion = float(expense.amount) / project_credit_purchases
-                paid = project_vendor_payments * proportion
+            if total_project_credit > 0:
+                proportion = expense.amount / total_project_credit
+                paid = total_project_payments * proportion
             else:
                 paid = 0
+                
+            balance = expense.amount - paid
             
-            balance = float(expense.amount) - paid
-        
         data.append({
-            'purchase_id': expense.expense_id,
+            'purchase_id': str(expense.id),
             'project_name': expense.project.name,
             'invoice_number': expense.invoice_number or '-',
             'invoice_date': expense.expense_date.isoformat(),
-            'amount': float(expense.amount),
+            'amount': expense.amount,
             'payment_mode': expense.payment_mode,
             'paid': paid,
             'balance': balance
         })
-    
+        
     return jsonify(data)
 
-@dashboard_bp.route('/api/vendor-material-summary/<int:vendor_id>', methods=['GET'])
-@login_required
-def get_vendor_material_summary(vendor_id):
-    """Get material-wise summary for a vendor (optionally filtered by project)"""
-    from flask import request
-    
-    vendor = company_filter(Vendor.query).filter_by(vendor_id=vendor_id).first_or_404()
-    project_name = request.args.get('project', None)
-    
-    # Aggregate by material
-    material_data = {}
-    
-    for expense in vendor.expenses:
-        # Filter by project if specified
-        if project_name and expense.project.name != project_name:
-            continue
-        # Check items (ExpenseItems)
-        for item in expense.items:
-            material = item.item_name
-            if material not in material_data:
-                material_data[material] = {
-                    'total_quantity': 0,
-                    'total_amount': 0
-                }
-            
-            material_data[material]['total_quantity'] += float(item.quantity)
-            material_data[material]['total_amount'] += float(item.total_price)
-    
-    # Convert to list
-    data = [
-        {
-            'material': material,
-            'total_quantity': values['total_quantity'],
-            'total_amount': values['total_amount']
-        }
-        for material, values in material_data.items()
-    ]
-    
-    return jsonify(data)
-
-# ==================== PROJECT PAYMENT ANALYTICS ====================
-@dashboard_bp.route('/api/project-payment-details/<int:project_id>', methods=['GET'])
+@dashboard_bp.route('/api/project-payment-details/<project_id>', methods=['GET'])
 @login_required
 def get_project_payment_details(project_id):
     """Get comprehensive payment details for a specific project"""
+    project = Project.objects(id=project_id, company=current_user.company).first()
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+        
+    expenses = Expense.objects(project=project)
+    payments = Payment.objects(project=project)
+    client_payments = ClientPayment.objects(project=project)
     
-    project = company_filter(Project.query).filter_by(project_id=project_id).first_or_404()
-    
-    # Split expenses into 'Material Purchase' and 'Regular Expense'
-    # Material Purchases (replacing Purchase History)
     purchase_history = []
     regular_expenses = []
     
     total_purchases_amount = 0
     total_expenses_amount = 0
     
-    for expense in project.expenses:
+    for expense in expenses:
         if expense.category == 'Material Purchase':
-            # It's a purchase
-            vendor_payments = sum([float(p.amount) for p in expense.payments])
+            # Calculate payments for this expense - tricky in Mongo without direct link in Payment model (unless added)
+            # In new Payment model, we have `expense` ReferenceField!
+            expense_payments = Payment.objects(expense=expense)
+            payment_sum = sum(p.amount for p in expense_payments)
             
-            # For DISPLAY in table: CASH/UPI/BANK show as fully paid
             if expense.payment_mode in ['CASH', 'UPI', 'BANK']:
-                # Already paid at source - show as fully paid
-                displayed_paid = float(expense.amount)
+                displayed_paid = expense.amount
                 displayed_balance = 0
             else:
-                # CREDIT - show actual payments and balance
-                displayed_paid = vendor_payments
-                displayed_balance = float(expense.amount) - vendor_payments
-            
+                displayed_paid = payment_sum
+                displayed_balance = expense.amount - payment_sum
+                
             purchase_history.append({
-                'purchase_id': expense.expense_id,
+                'purchase_id': str(expense.id),
                 'vendor_name': expense.vendor.name if expense.vendor else 'Unknown',
                 'invoice_number': expense.invoice_number or '-',
                 'invoice_date': expense.expense_date.isoformat(),
                 'subcategory': expense.subcategory,
-                'amount': float(expense.amount),
+                'amount': expense.amount,
                 'payment_mode': expense.payment_mode,
                 'paid': displayed_paid,
                 'balance': displayed_balance
             })
-            total_purchases_amount += float(expense.amount)
-            
+            total_purchases_amount += expense.amount
         else:
-            # Regular Expense
             regular_expenses.append({
-                'expense_id': expense.expense_id,
+                'expense_id': str(expense.id),
                 'expense_date': expense.expense_date.isoformat(),
                 'category': expense.category,
                 'subcategory': expense.subcategory,
-                'amount': float(expense.amount),
+                'amount': expense.amount,
                 'payment_mode': expense.payment_mode,
                 'description': expense.description
             })
-            total_expenses_amount += float(expense.amount)
-    
-    # Vendor Payments
-    vendor_payments = []
-    for payment in project.payments:
-        vendor_payments.append({
-            'payment_id': payment.payment_id,
-            'payment_date': payment.payment_date.isoformat() if payment.payment_date else None,
-            'vendor_name': payment.vendor.name,
-            'amount': float(payment.amount),
-            'payment_mode': payment.payment_mode,
-            'purchase_invoice': payment.expense.invoice_number if payment.expense else '-'
+            total_expenses_amount += expense.amount
+
+    vendor_payments_list = []
+    for p in payments:
+        vendor_payments_list.append({
+            'payment_id': str(p.id),
+            'payment_date': p.payment_date.isoformat(),
+            'vendor_name': p.vendor.name,
+            'amount': p.amount,
+            'payment_mode': p.payment_mode,
+            'purchase_invoice': p.expense.invoice_number if p.expense else '-'
         })
-    
-    # Client Payments
-    client_payments = []
-    for cp in project.client_payments:
-        client_payments.append({
-            'client_payment_id': cp.client_payment_id,
-            'payment_date': cp.payment_date.isoformat() if cp.payment_date else None,
-            'amount': float(cp.amount),
+
+    client_payments_list = []
+    for cp in client_payments:
+        client_payments_list.append({
+            'client_payment_id': str(cp.id),
+            'payment_date': cp.payment_date.isoformat(),
+            'amount': cp.amount,
             'payment_mode': cp.payment_mode,
             'reference_number': cp.reference_number,
             'remarks': cp.remarks
         })
-    
+        
     # Financial Summary
     total_spent = total_purchases_amount + total_expenses_amount
-    total_received = sum([float(cp.amount) for cp in project.client_payments])
+    total_received = sum(cp.amount for cp in client_payments)
+    total_vendor_payments = sum(p.amount for p in payments)
     
-    total_vendor_payments = sum([float(p.amount) for p in project.payments])
+    # Credit purchases
+    credit_purchases = sum(e.amount for e in expenses if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT')
     
-    # Calculate CREDIT purchases only (for outstanding)
-    total_credit_purchases = sum([
-        float(e.amount) for e in project.expenses
-        if e.category == 'Material Purchase' and e.payment_mode == 'CREDIT'
-    ])
+    vendor_outstanding = credit_purchases - total_vendor_payments
+    if vendor_outstanding < 0: vendor_outstanding = 0
     
-    # Vendor Outstanding = Only CREDIT purchases - vendor payments
-    # CASH/UPI/BANK are already paid, so NOT included in outstanding
-    vendor_outstanding = total_credit_purchases - total_vendor_payments
     client_outstanding = total_spent - total_received
     
     return jsonify({
         'project_name': project.name,
         'project_status': project.status,
         'purchase_history': purchase_history,
-        'vendor_payments': vendor_payments,
+        'vendor_payments': vendor_payments_list,
         'expenses': regular_expenses,
-        'client_payments': client_payments,
+        'client_payments': client_payments_list,
         'financial_summary': {
             'total_purchases': total_purchases_amount,
             'total_expenses': total_expenses_amount,
@@ -449,220 +330,107 @@ def get_project_payment_details(project_id):
         }
     })
 
-# ==================== DAILY CASH BALANCE ====================
 @dashboard_bp.route('/api/daily-cash-balance', methods=['GET'])
 @login_required
 def get_daily_cash_balance():
     """Get cash balance for a project and date range"""
-    
     project_id_param = request.args.get('project_id')
     from_date_str = request.args.get('from_date')
     to_date_str = request.args.get('to_date')
     
-    # Backward compatibility: support single 'date' parameter
     if not from_date_str and request.args.get('date'):
         from_date_str = request.args.get('date')
         to_date_str = from_date_str
-    
-    if not project_id_param or not from_date_str or not to_date_str:
-        return jsonify({'error': 'project_id, from_date and to_date required'}), 400
-    
+        
+    if not project_id_param or not from_date_str:
+        return jsonify({'error': 'Missing parameters'}), 400
+        
     from_date = datetime.fromisoformat(from_date_str).date()
     to_date = datetime.fromisoformat(to_date_str).date()
     
-    # Check if viewing all projects or a specific project
     if project_id_param == 'all':
-        # Get all projects for the user's company
-        projects = company_filter(Project.query).all()
+        projects = Project.objects(company=current_user.company)
         project_name = 'All Projects'
     else:
-        # Get specific project
-        project_id = int(project_id_param)
-        project = company_filter(Project.query).filter_by(project_id=project_id).first_or_404()
+        project = Project.objects(id=project_id_param, company=current_user.company).first()
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
         projects = [project]
         project_name = project.name
-    
-    # Initialize counters
+        
     opening_balance = 0
-    total_client_receipts = 0
-    total_expenses_outflow = 0
-    total_payments_outflow = 0
-    expenses_credit = 0
-    expenses_cash = 0
-    expenses_bank_upi = 0
-    all_transactions = []
+    transactions = []
     
-    # Process each project
-    for project in projects:
-        # Calculate opening balance (all transactions before from_date)
-        prev_client_payments = sum([
-            float(cp.amount) for cp in project.client_payments
-            if cp.payment_date < from_date
-        ])
-        
-        prev_direct_expenses = sum([
-            float(e.amount) for e in project.expenses
-            if e.expense_date < from_date and e.payment_mode in ['CASH', 'BANK', 'UPI']
-        ])
-        
-        prev_vendor_payments = sum([
-            float(p.amount) for p in project.payments
-            if p.payment_date < from_date
-        ])
-        
-        opening_balance += prev_client_payments - prev_direct_expenses - prev_vendor_payments
-        
-        # Period transactions (from_date to to_date inclusive)
-        period_client_payments = [
-            {
-                'type': 'client_payment',
-                'date': cp.payment_date.isoformat(),
-                'amount': float(cp.amount),
-                'payment_mode': cp.payment_mode,
-                'reference': cp.reference_number,
-                'remarks': cp.remarks,
-                'project_name': project.name  # Add project name
-            }
-            for cp in project.client_payments 
-            if from_date <= cp.payment_date <= to_date
-        ]
-        
-        # Period direct expenses (Cash/Bank/UPI)
-        period_expenses = [
-            {
-                'type': 'expense',
-                'date': e.expense_date.isoformat(),
-                'amount': float(e.amount),
-                'category': e.category,
-                'subcategory': e.subcategory,
-                'payment_mode': e.payment_mode,
-                'description': e.description,
-                'project_name': project.name  # Add project name
-            }
-            for e in project.expenses 
-            if from_date <= e.expense_date <= to_date and e.payment_mode in ['CASH', 'BANK', 'UPI']
-        ]
-        
-        # Period vendor payments
-        period_payments = [
-            {
-                'type': 'vendor_payment',
-                'date': p.payment_date.isoformat(),
-                'amount': float(p.amount),
-                'vendor_name': p.vendor.name,
-                'payment_mode': p.payment_mode,
-                'project_name': project.name  # Add project name
-            }
-            for p in project.payments 
-            if from_date <= p.payment_date <= to_date
-        ]
-        
-        # Aggregate totals
-        total_client_receipts += sum([t['amount'] for t in period_client_payments])
-        total_expenses_outflow += sum([t['amount'] for t in period_expenses])
-        total_payments_outflow += sum([t['amount'] for t in period_payments])
-        
-        # Split expenses by payment mode
-        expenses_credit += sum([
-            float(e.amount) for e in project.expenses
-            if from_date <= e.expense_date <= to_date and e.payment_mode == 'CREDIT'
-        ])
-        
-        # Split paid expenses into CASH and BANK/UPI
-        expenses_cash += sum([
-            float(e.amount) for e in project.expenses
-            if from_date <= e.expense_date <= to_date and e.payment_mode == 'CASH'
-        ])
-        
-        expenses_bank_upi += sum([
-            float(e.amount) for e in project.expenses
-            if from_date <= e.expense_date <= to_date and e.payment_mode in ['UPI', 'BANK']
-        ])
-        
-        # Add to all transactions
-        all_transactions.extend(period_client_payments + period_expenses + period_payments)
+    # Range totals
+    client_receipts = 0
+    expenses_outflow = 0
+    payments_outflow = 0
     
-    # Closing balance
-    closing_balance = opening_balance + total_client_receipts - total_expenses_outflow - total_payments_outflow
-    
-    # Sort all transactions by date
-    all_transactions.sort(key=lambda x: x['date'])
+    for p in projects:
+        # Fetch all related documents
+        cps = ClientPayment.objects(project=p)
+        exps = Expense.objects(project=p)
+        pays = Payment.objects(project=p)
+        
+        # Calculate opening balance (prior to from_date)
+        for cp in cps:
+            if cp.payment_date < from_date:
+                opening_balance += cp.amount
+            elif from_date <= cp.payment_date <= to_date:
+                client_receipts += cp.amount
+                transactions.append({
+                    'type': 'client_payment',
+                    'date': cp.payment_date.isoformat(),
+                    'amount': cp.amount,
+                    'payment_mode': cp.payment_mode,
+                    'reference': cp.reference_number,
+                    'remarks': cp.remarks,
+                    'project_name': p.name
+                })
+                
+        for e in exps:
+            # Only count CASH/BANK/UPI expenses as outflow
+            if e.payment_mode in ['CASH', 'BANK', 'UPI']:
+                if e.expense_date < from_date:
+                    opening_balance -= e.amount
+                elif from_date <= e.expense_date <= to_date:
+                    expenses_outflow += e.amount
+                    transactions.append({
+                        'type': 'expense',
+                        'date': e.expense_date.isoformat(),
+                        'amount': e.amount,
+                        'category': e.category,
+                        'subcategory': e.subcategory,
+                        'payment_mode': e.payment_mode,
+                        'description': e.description,
+                        'project_name': p.name
+                    })
+                    
+        for py in pays:
+            if py.payment_date < from_date:
+                opening_balance -= py.amount
+            elif from_date <= py.payment_date <= to_date:
+                payments_outflow += py.amount
+                transactions.append({
+                    'type': 'vendor_payment',
+                    'date': py.payment_date.isoformat(),
+                    'amount': py.amount,
+                    'vendor_name': py.vendor.name,
+                    'payment_mode': py.payment_mode,
+                    'project_name': p.name
+                })
+                
+    transactions.sort(key=lambda x: x['date'])
+    closing_balance = opening_balance + client_receipts - expenses_outflow - payments_outflow
     
     return jsonify({
         'project_name': project_name,
         'from_date': from_date_str,
         'to_date': to_date_str,
         'opening_balance': opening_balance,
-        'client_receipts': total_client_receipts,
-        'expenses': total_expenses_outflow,
-        'expenses_credit': expenses_credit,  # CREDIT expenses
-        'expenses_cash': expenses_cash,      # CASH expenses
-        'expenses_bank_upi': expenses_bank_upi,  # UPI/BANK expenses
-        'vendor_payments': total_payments_outflow,
+        'client_receipts': client_receipts,
+        'expenses': expenses_outflow,
+        'vendor_payments': payments_outflow,
         'closing_balance': closing_balance,
-        'transactions': all_transactions
-    })
-
-# ==================== PAYMENT MODE SPLIT ====================
-@dashboard_bp.route('/api/payment-mode-split', methods=['GET'])
-@login_required
-def get_payment_mode_split():
-    """Get payment mode analysis (CASH/BANK/UPI split)"""
-    
-    # Get all transactions for the company
-    client_payments = company_filter(ClientPayment.query).all()
-    expenses = company_filter(Expense.query).all()
-    vendor_payments = company_filter(Payment.query).all()
-    
-    # Initialize data structure
-    modes = ['CASH', 'BANK', 'UPI']
-    mode_data = {}
-    
-    for mode in modes:
-        # Calculate received (client payments)
-        received = sum([
-            float(cp.amount) for cp in client_payments 
-            if cp.payment_mode == mode
-        ])
-        
-        # Calculate expenses in this mode
-        # Only include actual outflows, not CREDIT purchases (if any end up here, though typical expenses are cash/bank)
-        expenses_spent = sum([
-            float(e.amount) for e in expenses
-            if e.payment_mode == mode
-        ])
-        
-        # Calculate vendor payments in this mode
-        payments_spent = sum([
-            float(p.amount) for p in vendor_payments
-            if p.payment_mode == mode
-        ])
-        
-        total_spent = expenses_spent + payments_spent
-        balance = received - total_spent
-        
-        mode_data[mode] = {
-            'received': received,
-            'spent': total_spent,
-            'balance': balance,
-            'breakdown': {
-                'expenses': expenses_spent,
-                'vendor_payments': payments_spent
-            }
-        }
-    
-    # Calculate totals
-    total_received = sum([md['received'] for md in mode_data.values()])
-    total_spent = sum([md['spent'] for md in mode_data.values()])
-    total_balance = sum([md['balance'] for md in mode_data.values()])
-    
-    return jsonify({
-        'cash': mode_data['CASH'],
-        'bank': mode_data['BANK'],
-        'upi': mode_data['UPI'],
-        'totals': {
-            'received': total_received,
-            'spent': total_spent,
-            'balance': total_balance
-        }
+        'transactions': transactions
     })

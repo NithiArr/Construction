@@ -8,6 +8,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+uploads/
 eggs/
 .eggs/
 lib/
@@ -26,13 +27,12 @@ env/
 ENV/
 .venv
 
-# Database
-# Temporarily allowing database to be committed for initial Railway deployment
-# Uncomment these after first deployment if you don't want DB in git:
-# *.db
-# *.sqlite
-# *.sqlite3
-# instance/
+# Database (SQLite - no longer used, MongoDB instead)
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
 
 # IDE
 .vscode/

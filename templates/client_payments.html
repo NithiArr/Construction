@@ -18,8 +18,8 @@
                     <option value="">All Projects</option>
                 </select>
             </div>
-            <button class="btn btn-primary" onclick="openModal('add-client-payment-modal')"
-                style="margin-top: 1.5rem;">+ Add Client Payment</button>
+            <button class="btn btn-primary" onclick="prepareAddClientPayment()" style="margin-top: 1.5rem;">+ Add Client
+                Payment</button>
         </div>
     </div>
 
@@ -146,7 +146,7 @@
         if (projectId === '') {
             clientPayments = [...allClientPayments];
         } else {
-            clientPayments = allClientPayments.filter(cp => cp.project_id === parseInt(projectId));
+            clientPayments = allClientPayments.filter(cp => cp.project_id === projectId);
         }
 
         renderClientPayments();
@@ -171,7 +171,7 @@
                 <td>${formatDate(cp.payment_date)}</td>
                 <td>${cp.remarks || '-'}</td>
                 <td>
-                    <button class="btn btn-sm btn-danger" onclick="deleteClientPayment(${cp.client_payment_id})">Delete</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteClientPayment('${cp.client_payment_id}')">Delete</button>
                 </td>
             </tr>
         `;
@@ -182,7 +182,7 @@
         e.preventDefault();
 
         const data = {
-            project_id: parseInt(document.getElementById('client-payment-project').value),
+            project_id: document.getElementById('client-payment-project').value,
             amount: parseFloat(document.getElementById('client-payment-amount').value),
             payment_mode: document.getElementById('client-payment-mode').value,
             payment_date: document.getElementById('client-payment-date').value,
@@ -230,6 +230,12 @@
     }
 
     document.getElementById('client-payment-date').value = new Date().toISOString().split('T')[0];
+
+    function prepareAddClientPayment() {
+        resetForm('client-payment-form');
+        document.getElementById('client-payment-date').value = new Date().toISOString().split('T')[0];
+        openModal('add-client-payment-modal');
+    }
 
     loadData();
 </script>

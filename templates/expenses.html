@@ -18,7 +18,7 @@
                     <option value="">All Projects</option>
                 </select>
             </div>
-            <button class="btn btn-primary" onclick="openModal('add-expense-modal')" style="margin-top: 1.5rem;">+ Add
+            <button class="btn btn-primary" onclick="prepareAddExpense()" style="margin-top: 1.5rem;">+ Add
                 Expense</button>
         </div>
     </div>
@@ -153,7 +153,7 @@
         if (projectId === '') {
             expenses = [...allExpenses];
         } else {
-            expenses = allExpenses.filter(e => e.project_id === parseInt(projectId));
+            expenses = allExpenses.filter(e => e.project_id === projectId);
         }
 
         renderExpenses();
@@ -179,8 +179,8 @@
                 <td>${formatDate(e.expense_date)}</td>
                 <td>${e.description || '-'}</td>
                 <td style="white-space: nowrap;">
-                    <button class="btn btn-sm btn-primary" onclick="editExpense(${e.expense_id})" style="margin-right: 0.5rem;">Edit</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteExpense(${e.expense_id})">Delete</button>
+                    <button class="btn btn-sm btn-primary" onclick="editExpense('${e.expense_id}')" style="margin-right: 0.5rem;">Edit</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.expense_id}')">Delete</button>
                 </td>
             </tr>
         `;
@@ -194,7 +194,7 @@
         const isEdit = expenseId !== '';
 
         const data = {
-            project_id: parseInt(document.getElementById('expense-project').value),
+            project_id: document.getElementById('expense-project').value,
             category: document.getElementById('expense-category').value,
             subcategory: document.getElementById('expense-subcategory').value || null,
             amount: parseFloat(document.getElementById('expense-amount').value),
@@ -276,6 +276,14 @@
             console.error('Error:', error);
             showNotification('Error deleting expense', 'error');
         }
+    }
+
+    function prepareAddExpense() {
+        resetForm('expense-form');
+        document.getElementById('expense-id').value = '';
+        document.getElementById('expense-modal-title').textContent = 'Add Expense';
+        document.getElementById('expense-date').value = new Date().toISOString().split('T')[0];
+        openModal('add-expense-modal');
     }
 
     // Set today's date as default

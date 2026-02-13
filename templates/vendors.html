@@ -114,8 +114,8 @@
             <td>${v.email || '-'}</td>
             <td>${v.gst_number || '-'}</td>
             <td>
-                <button class="btn btn-sm btn-secondary" onclick="editVendor(${v.vendor_id})">Edit</button>
-                <button class="btn btn-sm btn-danger" onclick="deleteVendor(${v.vendor_id}, '${v.name}')">Delete</button>
+                <button class="btn btn-sm btn-secondary" onclick="editVendor('${v.vendor_id}')">Edit</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteVendor('${v.vendor_id}', '${(v.name || '').replace(/'/g, "\\'")}')">Delete</button>
             </td>
         </tr>
     `).join('');

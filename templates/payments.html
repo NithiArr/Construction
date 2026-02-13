@@ -18,7 +18,7 @@
                     <option value="">All Projects</option>
                 </select>
             </div>
-            <button class="btn btn-primary" onclick="openModal('add-payment-modal')" style="margin-top: 1.5rem;">+ Add
+            <button class="btn btn-primary" onclick="prepareAddPayment()" style="margin-top: 1.5rem;">+ Add
                 Payment</button>
         </div>
     </div>
@@ -146,7 +146,7 @@
         if (projectId === '') {
             payments = [...allPayments];
         } else {
-            payments = allPayments.filter(p => p.project_id === parseInt(projectId));
+            payments = allPayments.filter(p => p.project_id === projectId);
         }
 
         renderPayments();
@@ -171,7 +171,7 @@
                 <td><span class="badge">${p.payment_mode}</span></td>
                 <td>${formatDate(p.payment_date)}</td>
                 <td>
-                    <button class="btn btn-sm btn-danger" onclick="deletePayment(${p.payment_id})">Delete</button>
+                    <button class="btn btn-sm btn-danger" onclick="deletePayment('${p.payment_id}')">Delete</button>
                 </td>
             </tr>
         `;
@@ -182,8 +182,8 @@
         e.preventDefault();
 
         const data = {
-            vendor_id: parseInt(document.getElementById('payment-vendor').value),
-            project_id: parseInt(document.getElementById('payment-project').value),
+            vendor_id: document.getElementById('payment-vendor').value,
+            project_id: document.getElementById('payment-project').value,
             amount: parseFloat(document.getElementById('payment-amount').value),
             payment_mode: document.getElementById('payment-mode').value,
             payment_date: document.getElementById('payment-date').value
@@ -226,6 +226,12 @@
             console.error('Error:', error);
             showNotification('Error deleting payment', 'error');
         }
+    }
+
+    function prepareAddPayment() {
+        resetForm('payment-form');
+        document.getElementById('payment-date').value = new Date().toISOString().split('T')[0];
+        openModal('add-payment-modal');
     }
 
     document.getElementById('payment-date').value = new Date().toISOString().split('T')[0];

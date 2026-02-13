@@ -135,7 +135,7 @@
             <td>${formatCurrency(vendor.total_paid)}</td>
             <td><strong>${formatCurrency(vendor.outstanding)}</strong></td>
             <td>
-                <button class="btn btn-sm btn-primary" onclick="showVendorDetails(${vendor.vendor_id}, '${vendor.vendor_name}')">
+                <button class="btn btn-sm btn-primary" onclick="showVendorDetails('${vendor.vendor_id}', '${(vendor.vendor_name || '').replace(/'/g, "\\'")}')">
                     View Details
                 </button>
             </td>

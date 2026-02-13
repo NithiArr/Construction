@@ -1,20 +1,25 @@
 from flask import Flask, render_template, redirect, url_for
 from flask_login import LoginManager, current_user
-from models import db, User
+from mongoengine import connect
+from models_mongo import User
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 def create_app():
     """Application factory"""
     app = Flask(__name__)
     
-    # Configuration
+    # Configuration from environment variables
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///construction_v2.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['UPLOAD_FOLDER'] = 'uploads'
+    app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', 'uploads')
+    app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 16777216))
     
-    # Initialize extensions
-    db.init_app(app)
+    # MongoDB Connection
+    mongodb_host = os.environ.get('MONGODB_HOST', 'mongodb://localhost:27017/construction_db')
+    connect(host=mongodb_host)
     
     # Setup Flask-Login
     login_manager = LoginManager()
@@ -23,7 +28,10 @@ def create_app():
     
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        try:
+            return User.objects(id=user_id).first()
+        except:
+            return None
     
     # Register blueprints
     from auth import auth_bp
@@ -49,11 +57,8 @@ def create_app():
                 return redirect(url_for('dashboard.main_dashboard'))
         return redirect(url_for('auth.login'))
     
-    # Create tables
-    with app.app_context():
-        db.create_all()
-        # Create upload directory if it doesn't exist
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    # Create upload directory if it doesn't exist
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     
     return app
 
@@ -61,6 +66,10 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
+    debug_mode = os.environ.get('DEBUG', 'True').lower() == 'true'
+    port = int(os.environ.get('PORT', 5000))
+    
     print("Construction Management System starting...")
-    print("Access the application at: http://127.0.0.1:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    print(f"Access the application at: http://127.0.0.1:{port}")
+    app.run(debug=debug_mode, host='0.0.0.0', port=port)
+
