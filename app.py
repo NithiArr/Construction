@@ -21,6 +21,9 @@ def create_app():
     mongodb_host = os.environ.get('MONGODB_HOST', 'mongodb://localhost:27017/construction_db')
     try:
         connect(host=mongodb_host)
+        # Force a connection attempt to fail fast if config is wrong
+        # We need to import get_connection to do this properly or just trust connect() for now
+        # But for the health-db route we will be explicit
         print(f"MongoDB connected successfully to: {mongodb_host.split('@')[-1] if '@' in mongodb_host else 'localhost'}")
     except Exception as e:
         print(f"Error connecting to MongoDB: {e}")
@@ -51,6 +54,19 @@ def create_app():
     app.register_blueprint(export_bp, url_prefix='/export')
     app.register_blueprint(pages_bp)
     
+    # Health check for DB
+    @app.route('/health-db')
+    def health_db():
+        try:
+            # Attempt to list collections or just ping
+            # This forces a round-trip to the DB
+            from mongoengine.connection import get_connection
+            conn = get_connection()
+            conn.admin.command('ping')
+            return {"status": "success", "message": "MongoDB is connected!"}, 200
+        except Exception as e:
+            return {"status": "error", "message": str(e)}, 500
+
     # Home route
     @app.route('/')
     def index():
