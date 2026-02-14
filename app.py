@@ -78,18 +78,8 @@ def create_app():
                 return redirect(url_for('dashboard.main_dashboard'))
         return redirect(url_for('auth.login'))
     
-    # Create upload directory
-    # On Vercel, the file system is read-only except for /tmp
-    if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
-        app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
-    
-    try:
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    except OSError:
-        # Fallback if detection failed
-        print(f"Read-only file system detected at {app.config['UPLOAD_FOLDER']}. Switching to /tmp/uploads")
-        app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
-        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    # Set upload folder - use /tmp on serverless platforms
+    app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
     
     return app
 
