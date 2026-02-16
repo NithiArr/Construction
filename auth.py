@@ -19,21 +19,24 @@ def logout_required(f):
 @logout_required
 def login():
     """User login"""
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
+    try:
+        if request.method == 'POST':
+            email = request.form.get('email')
+            password = request.form.get('password')
+            
+            # SQLAlchemy query
+            user = db.session.query(User).filter_by(email=email).first()
+            
+            if user and user.check_password(password):
+                login_user(user)
+                flash(f'Welcome back, {user.name}!', 'success')
+                return redirect(url_for('index'))
+            else:
+                flash('Invalid email or password', 'error')
         
-        # SQLAlchemy query
-        user = db.session.query(User).filter_by(email=email).first()
-        
-        if user and user.check_password(password):
-            login_user(user)
-            flash(f'Welcome back, {user.name}!', 'success')
-            return redirect(url_for('index'))
-        else:
-            flash('Invalid email or password', 'error')
-    
-    return render_template('login.html')
+        return render_template('login.html')
+    except Exception as e:
+        return f"Login Error: {str(e)}", 500
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
 @logout_required
