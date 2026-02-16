@@ -89,10 +89,18 @@ WSGI_APPLICATION = 'construction_cms.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# Vercel often provides different names for the database URL
+DATABASE_URL = os.environ.get('DATABASE_URL') or \
+               os.environ.get('POSTGRES_URL') or \
+               os.environ.get('POSTGRES_PRISMA_URL') or \
+               os.environ.get('POSTGRES_URL_NON_POOLING') or \
+               os.environ.get('SQLALCHEMY_DATABASE_URI')
+
 DATABASES = {
     'default': dj_database_url.config(
-        default='postgresql://postgres:admin123@localhost:5432/construction_db',
-        conn_max_age=600
+        default=DATABASE_URL or 'postgresql://postgres:admin123@localhost:5432/construction_db',
+        conn_max_age=600,
+        ssl_require=True if DATABASE_URL else False
     )
 }
 
