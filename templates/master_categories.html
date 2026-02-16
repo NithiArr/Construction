@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Master Categories{% endblock %}
 
@@ -80,7 +81,8 @@
 
     async function loadCategories() {
         try {
-            const response = await fetch('/api/master/categories');
+            // Updated URL for Django API
+            const response = await fetch("{% url 'api_master_categories_list' %}");
             if (response.redirected) {
                 window.location.reload();
                 return;
@@ -194,7 +196,13 @@
         if (!confirm('Are you sure? This will affect Purchase/Expense forms that use this category.')) return;
 
         try {
-            const res = await fetch(`/api/master/categories/${id}`, { method: 'DELETE' });
+            // Using mapped URL pattern logic in JS
+            const res = await fetch(`{% url 'api_master_categories_list' %}/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            });
             if (res.ok) {
                 showNotification('Category deleted', 'success');
                 loadCategories();
@@ -225,12 +233,20 @@
 
         const data = { name, type, subcategories };
         const method = id ? 'PUT' : 'POST';
-        const url = id ? `/api/master/categories/${id}` : '/api/master/categories';
+
+        // Correct URL construction using Django URL tag as base
+        let url = "{% url 'api_master_categories_list' %}";
+        if (id) {
+            url += `/${id}`;
+        }
 
         try {
             const res = await fetch(url, {
                 method: method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
                 body: JSON.stringify(data)
             });
 

@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+{% load static %}
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Construction Management System</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         .auth-container {
@@ -74,15 +75,14 @@
             </div>
 
             <!-- Flash Messages -->
-            {% with messages = get_flashed_messages(with_categories=true) %}
+            <!-- Flash Messages -->
             {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">
                 {{ message }}
             </div>
             {% endfor %}
             {% endif %}
-            {% endwith %}
 
             <!-- Auth Tabs -->
             <div class="auth-tabs">
@@ -91,7 +91,8 @@
             </div>
 
             <!-- Login Form -->
-            <form id="login-form" class="auth-form active" method="POST" action="{{ url_for('auth.login') }}">
+            <form id="login-form" class="auth-form active" method="POST" action="{% url 'login' %}">
+                {% csrf_token %}
                 <div class="form-group">
                     <label class="form-label">Email</label>
                     <input type="email" name="email" class="form-control" required>
@@ -106,7 +107,8 @@
             </form>
 
             <!-- Register Form -->
-            <form id="register-form" class="auth-form" method="POST" action="{{ url_for('auth.register') }}">
+            <form id="register-form" class="auth-form" method="POST" action="#">
+                {% csrf_token %}
                 <div class="form-group">
                     <label class="form-label">Full Name</label>
                     <input type="text" name="name" class="form-control" required>

@@ -153,7 +153,7 @@
     // Load projects
     async function loadProjects() {
         try {
-            const response = await fetch('/api/projects');
+            const response = await fetch("{% url 'api_projects_list' %}");
             const projects = await response.json();
 
             const select = document.getElementById('project-select');
@@ -228,7 +228,8 @@
         }
 
         try {
-            const response = await fetch(`/dashboard/api/daily-cash-balance?project_id=${projectId}&from_date=${fromDate}&to_date=${toDate}`);
+            const url = "{% url 'api_daily_cash_balance' %}";
+            const response = await fetch(`${url}?project_id=${projectId}&from_date=${fromDate}&to_date=${toDate}`);
             const data = await response.json();
 
             // Update balance tracker

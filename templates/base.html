@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+{% load static %}
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Construction Management System{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     {% block extra_css %}{% endblock %}
 </head>
@@ -15,93 +16,85 @@
         <!-- Sidebar -->
         <aside class="sidebar glass">
             <div class="user-info">
-                <div class="user-name">{{ current_user.name }}</div>
+                <div class="user-name">{{ user.name }}</div>
                 <div class="user-role">
-                    {{ current_user.company.name }}
-                    <span class="role-badge">{{ current_user.role }}</span>
+                    {{ user.company.name }}
+                    <span class="role-badge">{{ user.role }}</span>
                 </div>
             </div>
 
             <nav>
                 <ul class="nav-menu">
-                    {% if current_user.role == 'OWNER' %}
                     <li class="nav-item">
-                        <a href="{{ url_for('dashboard.owner_dashboard') }}" class="nav-link">
-                            📊 Owner Dashboard
-                        </a>
-                    </li>
-                    {% else %}
-                    <li class="nav-item">
-                        <a href="{{ url_for('dashboard.main_dashboard') }}" class="nav-link">
+                        <a href="{% url 'owner_dashboard' %}" class="nav-link">
                             🏠 Dashboard
                         </a>
                     </li>
-                    {% endif %}
 
-                    {% if current_user.role in ['OWNER', 'ADMIN'] %}
+                    {% if user.role == 'OWNER' or user.role == 'ADMIN' %}
                     <li class="nav-item">
-                        <a href="/master-categories" class="nav-link">
+                        <a href="{% url 'master_categories' %}" class="nav-link">
                             ⚙️ Master Data
                         </a>
                     </li>
                     {% endif %}
 
-                    {% if current_user.role in ['ADMIN', 'MANAGER'] %}
+                    {% if user.role == 'ADMIN' or user.role == 'MANAGER' %}
                     <li class="nav-item">
-                        <a href="/projects" class="nav-link">
+                        <a href="{% url 'projects' %}" class="nav-link">
                             🏗️ Projects
                         </a>
                     </li>
                     {% endif %}
 
                     <li class="nav-item">
-                        <a href="{{ url_for('dashboard.daily_cash') }}" class="nav-link">
+                        <a href="{% url 'daily_cash' %}" class="nav-link">
                             💰 Cash Balance
                         </a>
                     </li>
 
                     <li class="nav-item">
-                        <a href="{{ url_for('dashboard.vendor_analytics') }}" class="nav-link">
+                        <a href="{% url 'vendor_analytics' %}" class="nav-link">
                             📈 Vendor Analytics
                         </a>
                     </li>
 
-                    {% if current_user.role in ['ADMIN', 'MANAGER'] %}
+                    {% if user.role == 'ADMIN' or user.role == 'MANAGER' %}
                     <li class="nav-item">
-                        <a href="/vendors" class="nav-link">
+                        <a href="{% url 'vendors' %}" class="nav-link">
                             🏢 Vendors
                         </a>
                     </li>
 
                     <li class="nav-item">
-                        <a href="/purchases" class="nav-link">
+                        <a href="{% url 'purchases' %}" class="nav-link">
                             🛒 Purchases
                         </a>
                     </li>
                     {% endif %}
 
-                    {% if current_user.role in ['ADMIN', 'ACCOUNTANT'] %}
+                    {% if user.role == 'ADMIN' or user.role == 'ACCOUNTANT' %}
                     <li class="nav-item">
-                        <a href="/expenses" class="nav-link">
+                        <a href="{% url 'expenses' %}" class="nav-link">
                             💳 Expenses
                         </a>
                     </li>
 
                     <li class="nav-item">
-                        <a href="/payments" class="nav-link">
+                        <a href="{% url 'payments' %}" class="nav-link">
                             💸 Vendor Payments
                         </a>
                     </li>
 
                     <li class="nav-item">
-                        <a href="/client-payments" class="nav-link">
+                        <a href="{% url 'client_payments' %}" class="nav-link">
                             💵 Client Payments
                         </a>
                     </li>
                     {% endif %}
 
                     <li class="nav-item" style="margin-top: 2rem;">
-                        <a href="{{ url_for('auth.logout') }}" class="nav-link">
+                        <a href="{% url 'logout' %}" class="nav-link">
                             🚪 Logout
                         </a>
                     </li>
@@ -112,22 +105,20 @@
         <!-- Main Content -->
         <main class="main-content">
             <!-- Flash Messages -->
-            {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">
                 {{ message }}
             </div>
             {% endfor %}
             {% endif %}
-            {% endwith %}
 
             {% block content %}{% endblock %}
         </main>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{% static 'js/main.js' %}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 

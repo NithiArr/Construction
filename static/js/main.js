@@ -34,10 +34,18 @@ function formatCurrency(amount) {
 }
 
 // Format date
+// Format date
 function formatDate(dateString) {
     if (!dateString) return '-';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN');
+    if (isNaN(date.getTime())) return '-';
+
+    // Enforce dd/mm/yyyy format
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+
+    return `${day}/${month}/${year}`;
 }
 
 // Show loading state

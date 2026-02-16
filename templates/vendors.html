@@ -56,6 +56,7 @@
         </div>
         <div class="modal-body">
             <form id="vendor-form">
+                {% csrf_token %}
                 <input type="hidden" id="vendor-id">
 
                 <div class="form-group">
@@ -95,7 +96,7 @@
 
     async function loadVendors() {
         try {
-            const response = await fetch('/api/vendors');
+            const response = await fetch("{% url 'api_vendors_list' %}");
             vendors = await response.json();
             populateVendorFilter();
             renderVendors(vendors);
@@ -153,12 +154,22 @@
         };
 
         try {
-            const url = vendorId ? `/api/vendors/${vendorId}` : '/api/vendors';
-            const method = vendorId ? 'PUT' : 'POST';
+            let url = "{% url 'api_vendors_list' %}";
+            let method = 'POST';
+
+            if (vendorId) {
+                // Correctly construct URL for PUT using replace or JS string concat if endpoint is consistent
+                // In urls.py: path('api/vendors/<str:vendor_id>', ...)
+                url = "{% url 'api_vendors_list' %}/" + vendorId;
+                method = 'PUT';
+            }
 
             const response = await fetch(url, {
                 method: method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
                 body: JSON.stringify(data)
             });
 
@@ -194,7 +205,14 @@
         if (!confirm(`Are you sure you want to delete vendor "${name}"?`)) return;
 
         try {
-            const response = await fetch(`/api/vendors/${id}`, { method: 'DELETE' });
+            // Construct URL for DELETE
+            const url = "{% url 'api_vendors_list' %}/" + id;
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            });
 
             if (response.ok) {
                 showNotification('Vendor deleted', 'success');

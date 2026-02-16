@@ -2,7 +2,36 @@
 
 {% block title %}Vendor Analytics{% endblock %}
 
+
 {% block content %}
+<style>
+    .expand-icon {
+        font-size: 0.8rem;
+        display: inline-block;
+        transition: transform 0.3s ease;
+        color: var(--primary);
+    }
+
+    .material-row:hover,
+    .purchase-row:hover {
+        background-color: rgba(0, 0, 0, 0.02);
+    }
+
+    .items-row table {
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+
+    .items-row table th {
+        text-align: left;
+        font-weight: 600;
+        color: #495057;
+    }
+
+    .items-row table tr:hover {
+        background-color: #f1f3f5;
+    }
+</style>
 <div class="container fade-in">
     <h1>📈 Vendor Analytics</h1>
     <p class="text-secondary mb-3">Comprehensive vendor performance and purchase analysis</p>
@@ -42,7 +71,7 @@
 
     <!-- Vendor Details Modal -->
     <div id="vendor-modal" class="modal">
-        <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-content" style="max-width: 1200px;">
             <div class="modal-header">
                 <h3 id="vendor-modal-title">Vendor Details</h3>
                 <button class="modal-close" onclick="closeVendorModal()">&times;</button>
@@ -79,6 +108,7 @@
                     <table>
                         <thead>
                             <tr>
+                                <th style="width: 30px;"></th> <!-- Expand/Collapse -->
                                 <th>Project</th>
                                 <th>Date</th>
                                 <th>Invoice No.</th>
@@ -91,20 +121,6 @@
                     </table>
                 </div>
 
-                <!-- Material Summary -->
-                <h4 class="mb-2">Material-wise Summary</h4>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Material</th>
-                                <th>Total Quantity</th>
-                                <th>Total Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody id="material-summary-tbody"></tbody>
-                    </table>
-                </div>
             </div>
         </div>
     </div>
@@ -116,7 +132,7 @@
     // Load vendor summary
     async function loadVendorSummary() {
         try {
-            const response = await fetch('/dashboard/api/vendor-summary');
+            const response = await fetch("{% url 'api_vendor_summary' %}");
             vendorsData = await response.json();
             populateVendorFilter();
             renderVendorTable(vendorsData);
@@ -161,7 +177,9 @@
 
         // Load purchase history
         try {
-            const response = await fetch(`/dashboard/api/vendor-purchase-history/${vendorId}`);
+            // Construct URL via JS for dynamic ID
+            const url = "{% url 'api_vendor_purchase_history' 'VENDOR_ID' %}".replace('VENDOR_ID', vendorId);
+            const response = await fetch(url);
             allPurchases = await response.json();
 
             // Populate project filter
@@ -180,7 +198,9 @@
 
         // Load material summary
         try {
-            const response = await fetch(`/dashboard/api/vendor-material-summary/${vendorId}`);
+            // Construct URL via JS for dynamic ID
+            const url = "{% url 'api_vendor_material_summary' 'VENDOR_ID' %}".replace('VENDOR_ID', vendorId);
+            const response = await fetch(url);
             allMaterials = await response.json();
             renderMaterialSummary(allMaterials);
         } catch (error) {
@@ -240,28 +260,158 @@
     // Render purchase history table
     function renderPurchaseHistory(purchases) {
         const tbody = document.getElementById('purchase-history-tbody');
-        tbody.innerHTML = purchases.map(p => `
-            <tr>
-                <td>${p.project_name}</td>
-                <td>${p.invoice_date}</td>
-                <td>${p.invoice_number || '-'}</td>
-                <td><span class="badge">${p.category || 'N/A'}</span></td>
-                <td>${formatCurrency(p.amount)}</td>
-                <td><span class="badge badge-${p.payment_mode === 'CASH' ? 'success' : p.payment_mode === 'CREDIT' ? 'warning' : 'info'}">${p.payment_mode}</span></td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = purchases.map((p, idx) => {
+            const items = p.items || [];
+            const hasItems = items.length > 0;
+            const purchaseId = `purchase-${idx}`;
+
+            // Main purchase row
+            let html = `
+                <tr class="purchase-row" onclick="toggleVendorPurchaseItems('${purchaseId}')" style="cursor: ${hasItems ? 'pointer' : 'default'};">
+                    <td style="text-align: center;">
+                        ${hasItems ? '<span class="expand-icon" id="icon-' + purchaseId + '">▶</span>' : ''}
+                    </td>
+                    <td>${p.project_name}</td>
+                    <td>${formatDate(p.invoice_date)}</td>
+                    <td>${p.invoice_number || '-'}</td>
+                    <td><span class="badge">${p.category || 'N/A'}</span></td>
+                    <td>${formatCurrency(p.amount)}</td>
+                    <td><span class="badge badge-${p.payment_mode === 'CASH' ? 'success' : p.payment_mode === 'CREDIT' ? 'warning' : 'info'}">${p.payment_mode}</span></td>
+                </tr>
+            `;
+
+            // Items row (hidden by default)
+            if (hasItems) {
+                html += `
+                    <tr class="items-row" id="${purchaseId}" style="display: none;">
+                        <td colspan="7" style="padding: 0; background: #f8f9fa;">
+                            <div style="padding: 1rem; margin-left: 2rem">
+                                <table style="width: 100%; background: white;">
+                                    <thead>
+                                        <tr style="background: #e9ecef;">
+                                            <th style="padding: 0.5rem;">Category</th>
+                                            <th style="padding: 0.5rem;">Item Name</th>
+                                            <th style="padding: 0.5rem;">Quantity</th>
+                                            <th style="padding: 0.5rem;">Unit Price</th>
+                                            <th style="padding: 0.5rem;">Total Price</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${items.map(item => `
+                                            <tr>
+                                                <td style="padding: 0.5rem;"><span class="status-badge status-active">${item.category || 'N/A'}</span></td>
+                                                <td style="padding: 0.5rem;">${item.item_name}</td>
+                                                <td style="padding: 0.5rem;">${item.quantity} ${item.unit}</td>
+                                                <td style="padding: 0.5rem;">${formatCurrency(item.unit_price)}</td>
+                                                <td style="padding: 0.5rem;"><strong>${formatCurrency(item.total_price)}</strong></td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+
+            return html;
+        }).join('');
     }
 
-    // Render material summary table
+    // Toggle vendor purchase items visibility
+    function toggleVendorPurchaseItems(purchaseId) {
+        const itemsRow = document.getElementById(purchaseId);
+        const icon = document.getElementById('icon-' + purchaseId);
+
+        if (itemsRow && icon) {
+            if (itemsRow.style.display === 'none') {
+                itemsRow.style.display = 'table-row';
+                icon.textContent = '▼';
+            } else {
+                itemsRow.style.display = 'none';
+                icon.textContent = '▶';
+            }
+        }
+    }
+
+    // Render material summary table with expandable purchase details
     function renderMaterialSummary(materials) {
         const tbody = document.getElementById('material-summary-tbody');
-        tbody.innerHTML = materials.map(m => `
-            <tr>
-                <td><strong>${m.material}</strong></td>
-                <td>${m.total_quantity.toFixed(2)}</td>
-                <td>${formatCurrency(m.total_amount)}</td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = materials.map((m, idx) => {
+            const purchases = m.purchases || [];
+            const hasPurchases = purchases.length > 0;
+            const materialId = `material-${idx}`;
+
+            // Main material row
+            let html = `
+                <tr class="material-row" onclick="toggleMaterialPurchases('${materialId}')" style="cursor: ${hasPurchases ? 'pointer' : 'default'};">
+                    <td style="text-align: center;">
+                        ${hasPurchases ? '<span class="expand-icon" id="icon-' + materialId + '">▶</span>' : ''}
+                    </td>
+                    <td><strong>${m.material}</strong></td>
+                    <td>${m.total_quantity.toFixed(2)}</td>
+                    <td>${formatCurrency(m.total_amount)}</td>
+                </tr>
+            `;
+
+            // Purchases row (hidden by default)
+            if (hasPurchases) {
+                html += `
+                    <tr class="items-row" id="${materialId}" style="display: none;">
+                        <td colspan="4" style="padding: 0; background: #f8f9fa;">
+                            <div style="padding: 1rem; margin-left: 2rem;">
+                                <table style="width: 100%; background: white;">
+                                    <thead>
+                                        <tr style="background: #e9ecef;">
+                                            <th style="padding: 0.5rem;">Project</th>
+                                            <th style="padding: 0.5rem;">Date</th>
+                                            <th style="padding: 0.5rem;">Invoice</th>
+                                            <th style="padding: 0.5rem;">Item</th>
+                                            <th style="padding: 0.5rem;">Quantity</th>
+                                            <th style="padding: 0.5rem;">Unit Price</th>
+                                            <th style="padding: 0.5rem;">Total</th>
+                                            <th style="padding: 0.5rem;">Payment</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${purchases.map(p => `
+                                            <tr>
+                                                <td style="padding: 0.5rem;">${p.project}</td>
+                                                <td style="padding: 0.5rem;">${formatDate(p.date)}</td>
+                                                <td style="padding: 0.5rem;">${p.invoice_number}</td>
+                                                <td style="padding: 0.5rem;">${p.item_name}</td>
+                                                <td style="padding: 0.5rem;">${p.quantity} ${p.unit}</td>
+                                                <td style="padding: 0.5rem;">${formatCurrency(p.unit_price)}</td>
+                                                <td style="padding: 0.5rem;"><strong>${formatCurrency(p.total_price)}</strong></td>
+                                                <td style="padding: 0.5rem;"><span class="status-badge ${p.payment_mode === 'CREDIT' ? 'status-on_hold' : 'status-completed'}">${p.payment_mode}</span></td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+
+            return html;
+        }).join('');
+    }
+
+    // Toggle material purchases visibility
+    function toggleMaterialPurchases(materialId) {
+        const itemsRow = document.getElementById(materialId);
+        const icon = document.getElementById('icon-' + materialId);
+
+        if (itemsRow && icon) {
+            if (itemsRow.style.display === 'none') {
+                itemsRow.style.display = 'table-row';
+                icon.textContent = '▼';
+            } else {
+                itemsRow.style.display = 'none';
+                icon.textContent = '▶';
+            }
+        }
     }
 
     // Filter by project
@@ -281,9 +431,10 @@
 
         // Re-fetch material summary with project filter
         try {
+            const baseUrl = "{% url 'api_vendor_material_summary' 'VENDOR_ID' %}".replace('VENDOR_ID', currentVendorId);
             const url = selectedProject
-                ? `/dashboard/api/vendor-material-summary/${currentVendorId}?project=${encodeURIComponent(selectedProject)}`
-                : `/dashboard/api/vendor-material-summary/${currentVendorId}`;
+                ? `${baseUrl}?project=${encodeURIComponent(selectedProject)}`
+                : baseUrl;
             const response = await fetch(url);
             const materials = await response.json();
             renderMaterialSummary(materials);

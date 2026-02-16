@@ -10,6 +10,7 @@
             <p class="text-secondary">Record payments to vendors</p>
         </div>
         <div style="display: flex; gap: 1rem; align-items: center;">
+            <button class="btn btn-success" onclick="exportVendorPaymentsToExcel()">📊 Export to Excel</button>
             <button class="btn btn-primary" onclick="prepareAddPayment()">+ Add Payment</button>
         </div>
     </div>
@@ -79,6 +80,7 @@
         </div>
         <div class="modal-body">
             <form id="payment-form">
+                {% csrf_token %}
                 <div class="grid grid-2">
                     <div class="form-group">
                         <label class="form-label">Vendor *</label>
@@ -135,9 +137,9 @@
     async function loadData() {
         try {
             const [paymentsRes, vendorsRes, projectsRes] = await Promise.all([
-                fetch('/api/payments'),
-                fetch('/api/vendors'),
-                fetch('/api/projects')
+                fetch("{% url 'api_payments_list' %}"),
+                fetch("{% url 'api_vendors_list' %}"),
+                fetch("{% url 'api_projects_list' %}")
             ]);
 
             payments = await paymentsRes.json();
@@ -224,9 +226,12 @@
         };
 
         try {
-            const response = await fetch('/api/payments', {
+            const response = await fetch("{% url 'api_payments_list' %}", {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
                 body: JSON.stringify(data)
             });
 
@@ -248,7 +253,13 @@
         if (!confirm('Are you sure you want to delete this payment?')) return;
 
         try {
-            const response = await fetch(`/api/payments/${id}`, { method: 'DELETE' });
+            const url = "{% url 'api_payments_list' %}/" + id;
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            });
 
             if (response.ok) {
                 showNotification('Payment deleted', 'success');
@@ -266,6 +277,25 @@
         resetForm('payment-form');
         document.getElementById('payment-date').value = new Date().toISOString().split('T')[0];
         openModal('add-payment-modal');
+    }
+
+    // Export payments to Excel
+    // Export payments to Excel
+    function exportVendorPaymentsToExcel() {
+        const dateFrom = document.getElementById('header-filter-date-from')?.value || '';
+        const dateTo = document.getElementById('header-filter-date-to')?.value || '';
+        const project = document.getElementById('header-filter-project')?.value || '';
+        const vendor = document.getElementById('header-filter-vendor')?.value || '';
+
+        // Build query string
+        const params = new URLSearchParams();
+        if (dateFrom) params.append('date_from', dateFrom);
+        if (dateTo) params.append('date_to', dateTo);
+        if (project) params.append('project', project);
+        if (vendor) params.append('vendor', vendor);
+
+        window.location.href = "{% url 'export_vendor_payments' %}?" + params.toString();
+        showNotification('Exporting vendor payments data...', 'success');
     }
 
     document.getElementById('payment-date').value = new Date().toISOString().split('T')[0];
