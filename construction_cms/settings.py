@@ -97,8 +97,10 @@ DATABASE_URL = os.environ.get('DATABASE_URL') or \
                os.environ.get('SQLALCHEMY_DATABASE_URI')
 
 # Database Configuration
-# Vercel Build Shim: Use SQLite during build to avoid PostgreSQL driver errors
-if os.environ.get('VERCEL') and not os.environ.get('DATABASE_URL'):
+# Database Configuration
+# Vercel Build Shim: Use SQLite during collectstatic to avoid PostgreSQL driver errors
+import sys
+if 'collectstatic' in sys.argv:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
