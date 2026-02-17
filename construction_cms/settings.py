@@ -148,12 +148,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = '/static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-
 # Use basic WhiteNoise storage for Vercel deployment
-if DATABASE_URL:
+# Check for VERCEL environment variable which is always Set by Vercel
+if os.environ.get('VERCEL') or os.environ.get('DATABASE_URL'):
     # Production (Vercel)
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 else:
