@@ -3,6 +3,24 @@
 
 {% block title %}Projects{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Force full-screen for the details modal */
+    .modal-full {
+        position: fixed !important;
+        top: 2.5vh !important;
+        left: 2.5vw !important;
+        width: 95vw !important;
+        height: 95vh !important;
+        max-width: 95vw !important;
+        max-height: 95vh !important;
+        margin: 0 !important;
+        border-radius: var(--border-radius) !important;
+        z-index: 1001 !important;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.3) !important;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <style>
@@ -131,7 +149,8 @@
                 <div class="grid grid-2">
                     <div class="form-group">
                         <label class="form-label">Budget *</label>
-                        <input type="number" id="project-budget" class="form-control" required min="0" step="0.01">
+                        <input type="text" id="project-budget" class="form-control amount-input" required
+                            placeholder="0">
                     </div>
 
                     <div class="form-group">
@@ -157,15 +176,19 @@
 
 <!-- Project Details Modal -->
 <div id="project-modal" class="modal">
-    <div class="modal-content" style="max-width: 1400px;">
+    <div class="modal-content modal-full">
         <div class="modal-header">
             <div class="flex justify-between align-center" style="width: 100%;">
-                <h3 id="project-modal-title">Project Details</h3>
                 <div class="flex align-center gap-2">
-                    <button class="btn btn-success" onclick="exportProjectToExcel()" style="margin-right: 1rem;">
+                    <button class="btn btn-secondary" onclick="closeProjectModal()" style="padding: 0.5rem 1rem;">
+                        ← Back
+                    </button>
+                    <h3 id="project-modal-title" style="margin: 0;">Project Details</h3>
+                </div>
+                <div class="flex align-center gap-2">
+                    <button class="btn btn-success" onclick="exportProjectToExcel()">
                         📊 Export to Excel
                     </button>
-                    <button class="modal-close" onclick="closeProjectModal()">&times;</button>
                 </div>
             </div>
         </div>
@@ -231,7 +254,7 @@
                             </div>
                         </div>
                         <div>
-                            <h5 style="margin-bottom: 1rem;">Description Breakdown</h5>
+                            <h5 style="margin-bottom: 1rem;">Subcategory Breakdown</h5>
                             <div id="expense-category-legend" style="max-height: 300px; overflow-y: auto;">
                                 <!-- Legend will be populated by JS -->
                             </div>
@@ -274,11 +297,25 @@
                     <thead>
                         <tr>
                             <th style="width: 30px;"></th> <!-- Expand/Collapse -->
-                            <th>Vendor</th>
+                            <th>
+                                <select id="modal-filter-purchase-vendor" class="form-control form-control-sm"
+                                    onchange="filterPurchaseHistory()">
+                                    <option value="">All Vendors</option>
+                                </select>
+                            </th>
                             <th>Invoice No.</th>
                             <th>Date</th>
                             <th>Amount</th>
-                            <th>Payment Mode</th>
+                            <th>
+                                <select id="modal-filter-purchase-mode" class="form-control form-control-sm"
+                                    onchange="filterPurchaseHistory()">
+                                    <option value="">All Modes</option>
+                                    <option value="CASH">CASH</option>
+                                    <option value="BANK">BANK</option>
+                                    <option value="UPI">UPI</option>
+                                    <option value="CREDIT">CREDIT</option>
+                                </select>
+                            </th>
                         </tr>
                     </thead>
                     <tbody id="purchase-history-tbody"></tbody>
@@ -292,9 +329,22 @@
                     <thead>
                         <tr>
                             <th>Date</th>
-                            <th>Vendor</th>
+                            <th>
+                                <select id="modal-filter-payment-vendor" class="form-control form-control-sm"
+                                    onchange="filterVendorPayments()">
+                                    <option value="">All Vendors</option>
+                                </select>
+                            </th>
                             <th>Amount</th>
-                            <th>Payment Mode</th>
+                            <th>
+                                <select id="modal-filter-payment-mode" class="form-control form-control-sm"
+                                    onchange="filterVendorPayments()">
+                                    <option value="">All Modes</option>
+                                    <option value="CASH">CASH</option>
+                                    <option value="BANK">BANK</option>
+                                    <option value="UPI">UPI</option>
+                                </select>
+                            </th>
                             <th>Invoice Ref.</th>
                         </tr>
                     </thead>
@@ -309,10 +359,29 @@
                     <thead>
                         <tr>
                             <th>Date</th>
-                            <th>Category</th>
-                            <th>Description</th>
+                            <th>
+                                <select id="modal-filter-expense-category" class="form-control form-control-sm"
+                                    onchange="filterExpensesTable()">
+                                    <option value="">All Categories</option>
+                                </select>
+                            </th>
+                            <th>
+                                <select id="modal-filter-expense-subcategory" class="form-control form-control-sm"
+                                    onchange="filterExpensesTable()">
+                                    <option value="">All Subcategories</option>
+                                </select>
+                            </th>
                             <th>Amount</th>
-                            <th>Payment Mode</th>
+                            <th>
+                                <select id="modal-filter-expense-mode" class="form-control form-control-sm"
+                                    onchange="filterExpensesTable()">
+                                    <option value="">All Modes</option>
+                                    <option value="CASH">CASH</option>
+                                    <option value="BANK">BANK</option>
+                                    <option value="UPI">UPI</option>
+                                </select>
+                            </th>
+                            <th>Description</th>
                         </tr>
                     </thead>
                     <tbody id="expenses-tbody"></tbody>
@@ -327,7 +396,15 @@
                         <tr>
                             <th>Date</th>
                             <th>Amount</th>
-                            <th>Payment Mode</th>
+                            <th>
+                                <select id="modal-filter-client-mode" class="form-control form-control-sm"
+                                    onchange="filterClientPayments()">
+                                    <option value="">All Modes</option>
+                                    <option value="CASH">CASH</option>
+                                    <option value="BANK">BANK</option>
+                                    <option value="UPI">UPI</option>
+                                </select>
+                            </th>
                             <th>Reference</th>
                             <th>Remarks</th>
                         </tr>
@@ -342,6 +419,7 @@
 <script>
     let projects = [];
     let currentProjectId = null;  // Store current project ID for export
+    let currentProjectData = null; // Store fetched data for filtering
     let spendingPieChart = null;
     let allMaterialItems = [];  // For material chart filtering
 
@@ -351,6 +429,10 @@
             const response = await fetch("{% url 'api_projects_list' %}");
             projects = await response.json();
             populateHeaderFilters();
+
+            // Initialize Tom Select
+            initSearchableDropdowns();
+
             renderProjects(projects);
         } catch (error) {
             console.error('Error loading projects:', error);
@@ -428,7 +510,7 @@
             location: document.getElementById('project-location').value || null,
             start_date: document.getElementById('project-start').value || null,
             end_date: document.getElementById('project-end').value || null,
-            budget: parseFloat(document.getElementById('project-budget').value),
+            budget: parseAmount(document.getElementById('project-budget').value),
             status: document.getElementById('project-status').value
         };
 
@@ -474,7 +556,7 @@
         document.getElementById('project-location').value = project.location || '';
         document.getElementById('project-start').value = project.start_date || '';
         document.getElementById('project-end').value = project.end_date || '';
-        document.getElementById('project-budget').value = project.budget;
+        document.getElementById('project-budget').value = formatNumber(project.budget);
         document.getElementById('project-status').value = project.status;
 
         openModal('add-project-modal');
@@ -539,6 +621,18 @@
         filterSelect.innerHTML = '<option value="">All Categories</option>' +
             uniqueCategories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
 
+        // Sync Tom Select if it exists, or initialize it
+        if (filterSelect.tomselect) {
+            filterSelect.tomselect.clearOptions();
+            filterSelect.tomselect.addOption({ value: '', text: 'All Categories' });
+            uniqueCategories.forEach(cat => {
+                filterSelect.tomselect.addOption({ value: cat, text: cat });
+            });
+            filterSelect.tomselect.setValue('');
+        } else {
+            initSearchableDropdowns('#expense-category-filter');
+        }
+
         // Initial render with all expenses
         updateExpenseCategoryChart();
     }
@@ -560,14 +654,14 @@
             filteredExpenses = filteredExpenses.filter(e => e.category === selectedCategory);
         }
 
-        // Group expenses by DESCRIPTION (which is the subcategory dropdown)
+        // Group expenses by SUBCATEGORY
         const categoryMap = {};
         filteredExpenses.forEach(expense => {
-            const desc = expense.description || expense.category || 'Other';
-            if (!categoryMap[desc]) {
-                categoryMap[desc] = 0;
+            const label = expense.subcategory || expense.category || 'Other';
+            if (!categoryMap[label]) {
+                categoryMap[label] = 0;
             }
-            categoryMap[desc] += parseFloat(expense.amount);
+            categoryMap[label] += parseFloat(expense.amount);
         });
 
         // Convert to arrays for Chart.js
@@ -662,6 +756,18 @@
         const filterSelect = document.getElementById('material-category-filter');
         filterSelect.innerHTML = '<option value="">All Categories</option>' +
             uniqueCategories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+
+        // Sync Tom Select if it exists, or initialize it
+        if (filterSelect.tomselect) {
+            filterSelect.tomselect.clearOptions();
+            filterSelect.tomselect.addOption({ value: '', text: 'All Categories' });
+            uniqueCategories.forEach(cat => {
+                filterSelect.tomselect.addOption({ value: cat, text: cat });
+            });
+            filterSelect.tomselect.setValue('');
+        } else {
+            initSearchableDropdowns('#material-category-filter');
+        }
 
         // Initial render with all items
         updateMaterialChart();
@@ -785,7 +891,8 @@
             // Correct URL for Project Payment Details API
             let url = "{% url 'api_project_payment_details' 'PROJECT_ID_PLACEHOLDER' %}".replace('PROJECT_ID_PLACEHOLDER', projectId);
             const response = await fetch(url);
-            const data = await response.json();
+            currentProjectData = await response.json();
+            const data = currentProjectData;
 
             // Update financial summary
             const project = projects.find(p => p.project_id === projectId);
@@ -806,7 +913,6 @@
                 balanceEl.style.color = 'var(--warning)';
             } else {
                 balanceEl.style.color = 'var(--success)';
-                balanceEl.style.color = 'var(--success)';
             }
 
             // Remaining Budget
@@ -824,135 +930,209 @@
             document.getElementById('summary-received').textContent = formatCurrency(data.financial_summary.total_received);
             document.getElementById('summary-outstanding').textContent = formatCurrency(data.financial_summary.vendor_outstanding);
 
-            // Render Expense Category Breakdown Chart
-            renderExpenseCategoryChart(data);
+            // Reset filters and destroy existing TomSelect instances to allow re-population
+            document.querySelectorAll('#project-modal select').forEach(s => {
+                if (s.tomselect) s.tomselect.destroy();
+                s.value = "";
+            });
 
-            // Render Spending Breakdown Pie Chart
+            // Populate filters
+            const vendors = [...new Set([
+                ...data.purchase_history.map(p => p.vendor_name),
+                ...data.vendor_payments.map(p => p.vendor_name)
+            ])].filter(Boolean).sort();
+
+            document.getElementById('modal-filter-purchase-vendor').innerHTML = '<option value="">All Vendors</option>' +
+                vendors.map(v => `<option value="${v}">${v}</option>`).join('');
+
+            document.getElementById('modal-filter-payment-vendor').innerHTML = '<option value="">All Vendors</option>' +
+                vendors.map(v => `<option value="${v}">${v}</option>`).join('');
+
+            const expCategories = [...new Set(data.expenses.map(e => e.category))].filter(Boolean).sort();
+            document.getElementById('modal-filter-expense-category').innerHTML = '<option value="">All Categories</option>' +
+                expCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+
+            const expSubCategories = [...new Set(data.expenses.map(e => e.subcategory))].filter(Boolean).sort();
+            document.getElementById('modal-filter-expense-subcategory').innerHTML = '<option value="">All Subcategories</option>' +
+                expSubCategories.map(s => `<option value="${s}">${s}</option>`).join('');
+
+            // Initialize Tom Select for searching/filtering
+            initSearchableDropdowns('#project-modal select');
+
+            // Render All
+            renderExpenseCategoryChart(data);
             renderSpendingPieChart(data);
 
-            // Render purchase history with expandable item details
-            const purchasesTbody = document.getElementById('purchase-history-tbody');
-            if (data.purchase_history.length === 0) {
-                purchasesTbody.innerHTML = '<tr><td colspan="6" class="text-center">No purchases found</td></tr>';
-            } else {
-                // Group expense_items by expense_id for quick lookup
-                const itemsByExpense = {};
-                if (data.expense_items) {
-                    data.expense_items.forEach(item => {
-                        if (!itemsByExpense[item.expense_id]) {
-                            itemsByExpense[item.expense_id] = [];
-                        }
-                        itemsByExpense[item.expense_id].push(item);
-                    });
-                }
+            filterPurchaseHistory();
+            filterVendorPayments();
+            filterExpensesTable();
+            filterClientPayments();
 
-                purchasesTbody.innerHTML = data.purchase_history.map(p => {
-                    const items = itemsByExpense[p.purchase_id] || [];
-                    const hasItems = items.length > 0;
-
-                    // Main purchase row
-                    let html = `
-                        <tr class="purchase-row" data-purchase-id="${p.purchase_id}" onclick="togglePurchaseItems('${p.purchase_id}')" style="cursor: ${hasItems ? 'pointer' : 'default'};">
-                            <td style="text-align: center;">
-                                ${hasItems ? '<span class="expand-icon" id="icon-' + p.purchase_id + '">▶</span>' : ''}
-                            </td>
-                            <td><strong>${p.vendor_name}</strong></td>
-                            <td>${p.invoice_number || '-'}</td>
-                            <td>${formatDate(p.invoice_date)}</td>
-                            <td>${formatCurrency(p.amount)}</td>
-                            <td><span class="status-badge ${p.payment_mode === 'CREDIT' ? 'status-on_hold' : 'status-completed'}">${p.payment_mode}</span></td>
-                        </tr>
-                    `;
-
-                    // Items row (hidden by default)
-                    if (hasItems) {
-                        html += `
-                            <tr class="items-row" id="items-${p.purchase_id}" style="display: none;">
-                                <td colspan="6" style="padding: 0; background: #f8f9fa;">
-                                    <div style="padding: 1rem; margin-left: 2rem;">
-                                        <table style="width: 100%; background: white;">
-                                            <thead>
-                                                <tr style="background: #e9ecef;">
-                                                    <th style="padding: 0.5rem;">Category</th>
-                                                    <th style="padding: 0.5rem;">Item Name</th>
-                                                    <th style="padding: 0.5rem;">Quantity</th>
-                                                    <th style="padding: 0.5rem;">Unit Price</th>
-                                                    <th style="padding: 0.5rem;">Total Price</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${items.map(item => `
-                                                    <tr>
-                                                        <td style="padding: 0.5rem;"><span class="status-badge status-active">${item.category || 'Other'}</span></td>
-                                                        <td style="padding: 0.5rem;">${item.subcategory}</td>
-                                                        <td style="padding: 0.5rem;">${item.quantity} ${item.measuring_unit}</td>
-                                                        <td style="padding: 0.5rem;">${formatCurrency(item.unit_price)}</td>
-                                                        <td style="padding: 0.5rem;"><strong>${formatCurrency(item.total_price)}</strong></td>
-                                                    </tr>
-                                                `).join('')}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </td>
-                            </tr>
-                        `;
-                    }
-
-                    return html;
-                }).join('');
-            }
-
-            // Render vendor payments
-            const paymentsTbody = document.getElementById('vendor-payments-tbody');
-            if (data.vendor_payments.length === 0) {
-                paymentsTbody.innerHTML = '<tr><td colspan="5" class="text-center">No vendor payments found</td></tr>';
-            } else {
-                paymentsTbody.innerHTML = data.vendor_payments.map(p => `
-                    <tr>
-                        <td>${formatDate(p.payment_date)}</td>
-                        <td>${p.vendor_name}</td>
-                        <td>${formatCurrency(p.amount)}</td>
-                        <td>${p.payment_mode}</td>
-                        <td>${p.purchase_invoice}</td>
-                    </tr>
-                `).join('');
-            }
-
-            // Render expenses
-            const expensesTbody = document.getElementById('expenses-tbody');
-            if (data.expenses.length === 0) {
-                expensesTbody.innerHTML = '<tr><td colspan="6" class="text-center">No expenses found</td></tr>';
-            } else {
-                expensesTbody.innerHTML = data.expenses.map(e => `
-                    <tr>
-                        <td>${formatDate(e.expense_date)}</td>
-                        <td>${e.category}</td>
-                        <td>${e.description || '-'}</td>
-                        <td>${formatCurrency(e.amount)}</td>
-                        <td>${e.payment_mode}</td>
-                    </tr>
-                `).join('');
-            }
-
-            // Render client payments
-            const clientPaymentsTbody = document.getElementById('client-payments-tbody');
-            if (data.client_payments.length === 0) {
-                clientPaymentsTbody.innerHTML = '<tr><td colspan="5" class="text-center">No client payments received</td></tr>';
-            } else {
-                clientPaymentsTbody.innerHTML = data.client_payments.map(cp => `
-                    <tr>
-                        <td>${formatDate(cp.payment_date)}</td>
-                        <td>${formatCurrency(cp.amount)}</td>
-                        <td>${cp.payment_mode}</td>
-                        <td>${cp.reference_number || '-'}</td>
-                        <td>${cp.remarks || '-'}</td>
-                    </tr>
-                `).join('');
-            }
         } catch (error) {
             console.error('Error loading project details:', error);
             showNotification('Error loading project details', 'error');
         }
+    }
+
+    function filterPurchaseHistory() {
+        const vendor = document.getElementById('modal-filter-purchase-vendor').value;
+        const mode = document.getElementById('modal-filter-purchase-mode').value;
+
+        const filtered = currentProjectData.purchase_history.filter(p => {
+            return (!vendor || p.vendor_name === vendor) && (!mode || p.payment_mode === mode);
+        });
+
+        renderPurchaseHistory(filtered);
+    }
+
+    function renderPurchaseHistory(history) {
+        const tbody = document.getElementById('purchase-history-tbody');
+        if (history.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No purchases found</td></tr>';
+            return;
+        }
+
+        const itemsByExpense = {};
+        if (currentProjectData.expense_items) {
+            currentProjectData.expense_items.forEach(item => {
+                if (!itemsByExpense[item.expense_id]) itemsByExpense[item.expense_id] = [];
+                itemsByExpense[item.expense_id].push(item);
+            });
+        }
+
+        tbody.innerHTML = history.map(p => {
+            const items = itemsByExpense[p.purchase_id] || [];
+            const hasItems = items.length > 0;
+            return `
+                <tr class="purchase-row" data-purchase-id="${p.purchase_id}" onclick="togglePurchaseItems('${p.purchase_id}')" style="cursor: ${hasItems ? 'pointer' : 'default'};">
+                    <td style="text-align: center;">${hasItems ? '<span class="expand-icon" id="icon-' + p.purchase_id + '">▶</span>' : ''}</td>
+                    <td><strong>${p.vendor_name}</strong></td>
+                    <td>${p.invoice_number || '-'}</td>
+                    <td>${formatDate(p.invoice_date)}</td>
+                    <td>${formatCurrency(p.amount)}</td>
+                    <td><span class="status-badge ${p.payment_mode === 'CREDIT' ? 'status-on_hold' : 'status-completed'}">${p.payment_mode}</span></td>
+                </tr>
+                ${hasItems ? `
+                <tr class="items-row" id="items-${p.purchase_id}" style="display: none;">
+                    <td colspan="6" style="padding: 0; background: #f8f9fa;">
+                        <div style="padding: 1rem; margin-left: 2rem;">
+                            <table style="width: 100%; background: white;">
+                                <thead>
+                                    <tr style="background: #e9ecef;">
+                                        <th style="padding: 0.5rem;">Category</th>
+                                        <th style="padding: 0.5rem;">Item Name</th>
+                                        <th style="padding: 0.5rem;">Brand</th>
+                                        <th style="padding: 0.5rem;">Quantity</th>
+                                        <th style="padding: 0.5rem;">Unit Price</th>
+                                        <th style="padding: 0.5rem;">Total Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${items.map(item => `
+                                        <tr>
+                                            <td style="padding: 0.5rem;"><span class="status-badge status-active">${item.category || 'Other'}</span></td>
+                                            <td style="padding: 0.5rem;">${item.subcategory}</td>
+                                            <td style="padding: 0.5rem;">${item.brand || '-'}</td>
+                                            <td style="padding: 0.5rem;">${item.quantity} ${item.measuring_unit}</td>
+                                            <td style="padding: 0.5rem;">${formatCurrency(item.unit_price)}</td>
+                                            <td style="padding: 0.5rem;"><strong>${formatCurrency(item.total_price)}</strong></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </td>
+                </tr>` : ''}
+            `;
+        }).join('');
+    }
+
+    function filterVendorPayments() {
+        const vendor = document.getElementById('modal-filter-payment-vendor').value;
+        const mode = document.getElementById('modal-filter-payment-mode').value;
+        const filtered = currentProjectData.vendor_payments.filter(p => {
+            return (!vendor || p.vendor_name === vendor) && (!mode || p.payment_mode === mode);
+        });
+        renderVendorPayments(filtered);
+    }
+
+    function renderVendorPayments(payments) {
+        const tbody = document.getElementById('vendor-payments-tbody');
+        if (payments.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">No vendor payments found</td></tr>';
+            return;
+        }
+        tbody.innerHTML = payments.map(p => `
+            <tr>
+                <td>${formatDate(p.payment_date)}</td>
+                <td>${p.vendor_name}</td>
+                <td>${formatCurrency(p.amount)}</td>
+                <td>${getPaymentBadgeHTML(p.payment_mode)}</td>
+                <td>${p.purchase_invoice || '-'}</td>
+            </tr>
+        `).join('');
+    }
+
+    function filterExpensesTable() {
+        const cat = document.getElementById('modal-filter-expense-category').value;
+        const sub = document.getElementById('modal-filter-expense-subcategory').value;
+        const mode = document.getElementById('modal-filter-expense-mode').value;
+        const filtered = currentProjectData.expenses.filter(e => {
+            return (!cat || e.category === cat) && (!sub || e.subcategory === sub) && (!mode || e.payment_mode === mode);
+        });
+        renderExpensesTable(filtered);
+    }
+
+    function renderExpensesTable(expenses) {
+        const tbody = document.getElementById('expenses-tbody');
+        if (expenses.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No expenses found</td></tr>';
+            return;
+        }
+        tbody.innerHTML = expenses.map(e => `
+            <tr>
+                <td>${formatDate(e.expense_date)}</td>
+                <td>${e.category}</td>
+                <td>${e.subcategory || '-'}</td>
+                <td><strong>${formatCurrency(e.amount)}</strong></td>
+                <td>${getPaymentBadgeHTML(e.payment_mode)}</td>
+                <td>${e.description || '-'}</td>
+            </tr>
+        `).join('');
+    }
+
+    function filterClientPayments() {
+        const mode = document.getElementById('modal-filter-client-mode').value;
+        const filtered = currentProjectData.client_payments.filter(cp => {
+            return (!mode || cp.payment_mode === mode);
+        });
+        renderClientPayments(filtered);
+    }
+
+    function renderClientPayments(payments) {
+        const tbody = document.getElementById('client-payments-tbody');
+        if (payments.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">No client payments received</td></tr>';
+            return;
+        }
+        tbody.innerHTML = payments.map(cp => `
+            <tr>
+                <td>${formatDate(cp.payment_date)}</td>
+                <td>${formatCurrency(cp.amount)}</td>
+                <td>${getPaymentBadgeHTML(cp.payment_mode)}</td>
+                <td>${cp.reference_number || '-'}</td>
+                <td>${cp.remarks || '-'}</td>
+            </tr>
+        `).join('');
+    }
+
+    // Helper for payment badges
+    function getPaymentBadgeHTML(mode) {
+        let badgeClass = 'status-secondary';
+        if (mode === 'CASH') badgeClass = 'status-completed';
+        else if (mode === 'BANK' || mode === 'UPI') badgeClass = 'status-active';
+        else if (mode === 'CREDIT') badgeClass = 'status-on_hold';
+        return `<span class="status-badge ${badgeClass}">${mode}</span>`;
     }
 
     // Export project to Excel

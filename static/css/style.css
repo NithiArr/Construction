@@ -736,6 +736,21 @@ tr:hover {
     box-shadow: var(--shadow-lg);
 }
 
+/* Full screen modal variant - large focused view */
+.modal-full {
+    position: fixed !important;
+    top: 2.5vh !important;
+    left: 2.5vw !important;
+    width: 95vw !important;
+    height: 95vh !important;
+    max-width: 95vw !important;
+    max-height: 95vh !important;
+    margin: 0 !important;
+    border-radius: var(--border-radius) !important;
+    z-index: 1001 !important;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.3) !important;
+}
+
 .modal-header {
     display: flex;
     justify-content: space-between;
@@ -910,4 +925,13 @@ tr:hover {
     font-size: 0.75rem;
     font-weight: 600;
     margin-left: 0.5rem;
+}
+
+/* ==================== MOBILE MENU DEFAULTS ==================== */
+.mobile-menu-toggle {
+    display: none;
+}
+
+.mobile-overlay {
+    display: none;
 }

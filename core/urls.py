@@ -13,9 +13,9 @@ urlpatterns = [
     path('dashboard/api/daily-cash-balance', api.daily_cash_balance, name='api_daily_cash_balance'),
     
     # Master Categories
-    path('master-categories', views.master_categories, name='master_categories'),
-    path('api/master/categories', api.master_categories_list, name='api_master_categories_list'),
-    path('api/master/categories/<int:category_id>', api.master_categories_detail, name='api_master_categories_detail'),
+    path('master-categories/', views.master_categories, name='master_categories'),
+    path('api/master/categories/', api.master_categories_list, name='api_master_categories_list'),
+    path('api/master/categories/<int:category_id>/', api.master_categories_detail, name='api_master_categories_detail'),
     
     # Projects
     path('projects', views.projects, name='projects'),

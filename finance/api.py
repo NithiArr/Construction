@@ -16,6 +16,40 @@ def purchases_list(request):
         return create_purchase(request)
     return get_purchases(request)
 
+@transaction.atomic
+def create_purchase(request):
+    try:
+        data = json.loads(request.body)
+        project = Project.objects.get(project_id=data['project_id'], company=request.user.company)
+        vendor = Vendor.objects.get(vendor_id=data['vendor_id'], company=request.user.company)
+        
+        purchase = Expense.objects.create(
+            company=request.user.company,
+            project=project,
+            vendor=vendor,
+            expense_type='Material Purchase',
+            category=data.get('category'),
+            invoice_number=data.get('invoice_number'),
+            expense_date=datetime.fromisoformat(data['invoice_date']).date(),
+            amount=data['total_amount'],
+            payment_mode=data.get('payment_type', 'CREDIT')
+        )
+        
+        for item_data in data.get('items', []):
+            ExpenseItem.objects.create(
+                expense=purchase,
+                item_name=item_data['item_name'],
+                quantity=item_data['quantity'],
+                measuring_unit=item_data.get('measuring_unit', 'Unit'),
+                unit_price=item_data['unit_price'],
+                total_price=item_data['total_price'],
+                brand=item_data.get('brand', '').upper() if item_data.get('brand') else None
+            )
+            
+        return JsonResponse({'message': 'Purchase created', 'purchase_id': str(purchase.expense_id)}, status=201)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
 @login_required
 def purchase_detail(request, purchase_id):
     if request.method == 'GET':
@@ -35,7 +69,8 @@ def get_purchase_detail(request, purchase_id):
             'quantity': float(item.quantity),
             'measuring_unit': item.measuring_unit,
             'unit_price': float(item.unit_price),
-            'total_price': float(item.total_price)
+            'total_price': float(item.total_price),
+            'brand': item.brand
         } for item in p.items.all()]
         
         data = {
@@ -89,7 +124,8 @@ def update_purchase(request, purchase_id):
                     quantity=item_data['quantity'],
                     measuring_unit=item_data.get('measuring_unit', 'Unit'),
                     unit_price=item_data['unit_price'],
-                    total_price=item_data['total_price']
+                    total_price=item_data['total_price'],
+                    brand=item_data.get('brand', '').upper() if item_data.get('brand') else None
                 )
                 
         return JsonResponse({'message': 'Purchase updated'})
@@ -142,7 +178,8 @@ def get_purchases(request):
             'quantity': float(item.quantity),
             'measuring_unit': item.measuring_unit,
             'unit_price': float(item.unit_price),
-            'total_price': float(item.total_price)
+            'total_price': float(item.total_price),
+            'brand': item.brand
         } for item in p.items.all()]
         
         data.append({
@@ -165,11 +202,17 @@ def get_purchases(request):
 def get_expense_detail(request, expense_id):
     try:
         e = Expense.objects.get(expense_id=expense_id, company=request.user.company, expense_type='Regular Expense')
+        
+        # Get subcategory from the first item
+        first_item = e.items.first()
+        subcategory = first_item.item_name if first_item else ""
+        
         data = {
             'expense_id': str(e.expense_id),
             'project_id': str(e.project.project_id),
             'project_name': e.project.name,
             'category': e.category,
+            'subcategory': subcategory,
             'amount': float(e.amount),
             'payment_mode': e.payment_mode,
             'expense_date': e.expense_date.isoformat(),
@@ -180,6 +223,7 @@ def get_expense_detail(request, expense_id):
     except Expense.DoesNotExist:
         return JsonResponse({'error': 'Expense not found'}, status=404)
 
+@transaction.atomic
 def update_expense(request, expense_id):
     try:
         e = Expense.objects.get(expense_id=expense_id, company=request.user.company, expense_type='Regular Expense')
@@ -201,6 +245,19 @@ def update_expense(request, expense_id):
             e.bill_url = data['bill_url']
             
         e.save()
+        
+        # Update Subcategory in ExpenseItem
+        if 'subcategory' in data:
+            e.items.all().delete()
+            ExpenseItem.objects.create(
+                expense=e,
+                item_name=data['subcategory'],
+                quantity=1,
+                measuring_unit='unit',
+                unit_price=e.amount,
+                total_price=e.amount
+            )
+            
         return JsonResponse({'message': 'Expense updated'})
     except Expense.DoesNotExist:
          return JsonResponse({'error': 'Expense not found'}, status=404)
@@ -213,17 +270,23 @@ def get_expenses(request):
         expense_type='Regular Expense'
     ).order_by('-expense_date')
     
-    data = [{
-        'expense_id': str(e.expense_id),
-        'project_id': str(e.project.project_id),
-        'project_name': e.project.name,
-        'category': e.category,
-        'amount': float(e.amount),
-        'payment_mode': e.payment_mode,
-        'expense_date': e.expense_date.isoformat(),
-        'description': e.description,
-        'bill_url': e.bill_url
-    } for e in expenses]
+    data = []
+    for e in expenses:
+        first_item = e.items.first()
+        subcategory = first_item.item_name if first_item else ""
+        
+        data.append({
+            'expense_id': str(e.expense_id),
+            'project_id': str(e.project.project_id),
+            'project_name': e.project.name,
+            'category': e.category,
+            'subcategory': subcategory,
+            'amount': float(e.amount),
+            'payment_mode': e.payment_mode,
+            'expense_date': e.expense_date.isoformat(),
+            'description': e.description,
+            'bill_url': e.bill_url
+        })
     
     return JsonResponse(data, safe=False)
 
@@ -233,17 +296,29 @@ def create_expense(request):
         print(f"Received expense data: {data}")  # Debug log
         project = Project.objects.get(project_id=data['project_id'], company=request.user.company)
         
-        expense = Expense.objects.create(
-            company=request.user.company,
-            project=project,
-            expense_type='Regular Expense',
-            category=data.get('category'),
-            amount=data['amount'],
-            payment_mode=data['payment_mode'],
-            expense_date=datetime.fromisoformat(data['expense_date']).date(),
-            description=data.get('description'),
-            bill_url=data.get('bill_url')
-        )
+        with transaction.atomic():
+            expense = Expense.objects.create(
+                company=request.user.company,
+                project=project,
+                expense_type='Regular Expense',
+                category=data.get('category'),
+                amount=data['amount'],
+                payment_mode=data['payment_mode'],
+                expense_date=datetime.fromisoformat(data['expense_date']).date(),
+                description=data.get('description', ''),
+                bill_url=data.get('bill_url')
+            )
+            
+            # Save subcategory to ExpenseItem
+            subcategory = data.get('subcategory') or data.get('description') # Fallback for old calls
+            ExpenseItem.objects.create(
+                expense=expense,
+                item_name=subcategory,
+                quantity=1,
+                measuring_unit='unit',
+                unit_price=data['amount'],
+                total_price=data['amount']
+            )
         return JsonResponse({'message': 'Expense created', 'expense_id': str(expense.expense_id)}, status=201)
     except Project.DoesNotExist:
         return JsonResponse({'error': 'Project not found'}, status=404)

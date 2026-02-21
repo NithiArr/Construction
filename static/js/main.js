@@ -33,6 +33,172 @@ function formatCurrency(amount) {
     });
 }
 
+// Utility to parse amount strings with commas and shorthands (2l, 10k)
+function parseAmount(value) {
+    if (typeof value !== 'string') return parseFloat(value) || 0;
+
+    let cleanValue = value.replace(/[₹,\s]/g, '').toLowerCase();
+    if (!cleanValue) return 0;
+
+    let multiplier = 1;
+    if (cleanValue.endsWith('k')) {
+        multiplier = 1000;
+        cleanValue = cleanValue.slice(0, -1);
+    } else if (cleanValue.endsWith('l')) {
+        multiplier = 100000;
+        cleanValue = cleanValue.slice(0, -1);
+    } else if (cleanValue.endsWith('cr')) {
+        multiplier = 10000000;
+        cleanValue = cleanValue.slice(0, -2);
+    }
+
+    return (parseFloat(cleanValue) || 0) * multiplier;
+}
+
+// Format a number with Indian commas
+function formatNumber(num) {
+    if (isNaN(num)) return '';
+    const parts = num.toString().split('.');
+    let lastThree = parts[0].substring(parts[0].length - 3);
+    const otherNumbers = parts[0].substring(0, parts[0].length - 3);
+    if (otherNumbers !== '') {
+        lastThree = ',' + lastThree;
+    }
+    const res = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + lastThree;
+    return parts.length > 1 ? res + "." + parts[1] : res;
+}
+
+// Initialize amount formatting for inputs with .amount-input class
+function initAmountFormatting() {
+    document.body.addEventListener('input', (e) => {
+        if (e.target.classList.contains('amount-input')) {
+            const input = e.target;
+            let val = input.value;
+
+            // Save state before modification
+            const oldVal = val;
+            const oldCursor = input.selectionStart;
+
+            // 1. Remove all characters except digits, shorthands, and one dot
+            // We keep characters we want to allow the user to type
+            let cleanVal = val.replace(/[^0-9kKlLcCrR.]/g, '');
+
+            // 2. Handle shorthand characters - if they exist, don't comma-format yet
+            if (/[klcr]/i.test(cleanVal)) {
+                input.value = cleanVal;
+                return;
+            }
+
+            // 3. Comma formatting logic
+            const parts = cleanVal.split('.');
+            let integerPart = parts[0];
+            const decimalPart = parts.length > 1 ? parts[1] : null;
+
+            if (integerPart === "" && decimalPart !== null) integerPart = "0";
+
+            if (integerPart !== "") {
+                const num = parseInt(integerPart, 10);
+                if (!isNaN(num)) {
+                    integerPart = formatNumber(num);
+                }
+            }
+
+            let newVal = integerPart;
+            if (decimalPart !== null) newVal += "." + decimalPart.substring(0, 2);
+
+            // 4. Update input value and restore cursor position
+            input.value = newVal;
+
+            // Cursor logic: find how many digits were before the cursor and find them again
+            // This handles commas being added/removed
+            let digitsBeforeCursor = oldVal.substring(0, oldCursor).replace(/\D/g, '').length;
+            let newCursor = 0;
+            let digitsCount = 0;
+            while (newCursor < newVal.length && digitsCount < digitsBeforeCursor) {
+                if (/\d/.test(newVal[newCursor])) {
+                    digitsCount++;
+                }
+                newCursor++;
+            }
+            input.setSelectionRange(newCursor, newCursor);
+        }
+    });
+
+    document.body.addEventListener('keydown', (e) => {
+        if (e.target.classList.contains('amount-input') && e.key === 'Enter') {
+            e.target.blur(); // Trigger shorthand expansion
+        }
+    });
+
+    document.body.addEventListener('blur', (e) => {
+        if (e.target.classList.contains('amount-input')) {
+            const input = e.target;
+            const value = parseAmount(input.value);
+            input.value = formatNumber(value);
+            // Trigger a change event so listeners (like totals) can update
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }, true);
+}
+
+// Initialize date range picker for elements with .date-range-picker class
+function initDateRangePicker(selector, onChangeCallback) {
+    if (!window.flatpickr) return;
+
+    const instance = flatpickr(selector, {
+        mode: "range",
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "d M Y",
+        allowInput: true,
+        onClose: function (selectedDates, dateStr, instance) {
+            if (onChangeCallback) {
+                if (selectedDates.length === 2) {
+                    onChangeCallback(selectedDates, dateStr);
+                } else if (dateStr === "") {
+                    onChangeCallback([], "");
+                }
+            }
+        },
+        onReady: function (selectedDates, dateStr, instance) {
+            // Add a "Clear" button to the calendar footer
+            const clearBtn = document.createElement("div");
+            clearBtn.innerHTML = "Clear Data";
+            clearBtn.style.textAlign = "center";
+            clearBtn.style.padding = "5px";
+            clearBtn.style.cursor = "pointer";
+            clearBtn.style.color = "var(--danger)";
+            clearBtn.style.fontWeight = "bold";
+            clearBtn.style.borderTop = "1px solid var(--border-color)";
+            clearBtn.onclick = () => {
+                instance.clear();
+                instance.close();
+                if (onChangeCallback) onChangeCallback([], "");
+            };
+            instance.calendarContainer.appendChild(clearBtn);
+
+            // Handle backspace/delete in the input field
+            const altInput = instance.altInput;
+            altInput.addEventListener('keydown', (e) => {
+                if ((e.key === 'Backspace' || e.key === 'Delete') && altInput.value === "") {
+                    instance.clear();
+                    if (onChangeCallback) onChangeCallback([], "");
+                }
+            });
+
+            // Re-filter immediately when manually cleared
+            altInput.addEventListener('input', (e) => {
+                if (altInput.value === "") {
+                    instance.clear();
+                    if (onChangeCallback) onChangeCallback([], "");
+                }
+            });
+        }
+    });
+
+    return instance;
+}
+
 // Format date
 // Format date
 function formatDate(dateString) {
@@ -236,6 +402,7 @@ function setActiveNavLink() {
 document.addEventListener('DOMContentLoaded', () => {
     setupMobileMenu();
     setActiveNavLink();
+    initAmountFormatting();
 });
 
 // Global error handler

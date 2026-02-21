@@ -8,6 +8,17 @@
     <title>{% block title %}Construction Management System{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_blue.css">
+    <style>
+        /* Force Tom Select dropdowns and Flatpickr to be on top */
+        .ts-dropdown,
+        .ts-dropdown.plugin-dropdown_input,
+        .flatpickr-calendar {
+            z-index: 100000 !important;
+        }
+    </style>
     {% block extra_css %}{% endblock %}
 </head>
 
@@ -118,7 +129,32 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="{% static 'js/main.js' %}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+    <script>
+        // Global helper to initialize Tom Select on specific elements or all selects
+        function initSearchableDropdowns(selector = 'select:not(.no-search)') {
+            document.querySelectorAll(selector).forEach(el => {
+                if (el.tomselect) {
+                    el.tomselect.sync();
+                } else {
+                    new TomSelect(el, {
+                        create: false,
+                        maxItems: 1,
+                        allowEmptyOption: true,
+                        plugins: ['dropdown_input'],
+                        sortField: {
+                            field: "text",
+                            direction: "asc"
+                        },
+                        // Only use dropdownParent: 'body' if we are inside a modal
+                        dropdownParent: el.closest('.modal') ? 'body' : null
+                    });
+                }
+            });
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="{% static 'js/main.js' %}?v=1.0.4"></script>
     {% block extra_js %}{% endblock %}
 </body>
 

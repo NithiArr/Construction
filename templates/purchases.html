@@ -2,6 +2,25 @@
 
 {% block title %}Purchases{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Force full-screen for the details modal */
+    .modal-full {
+        position: fixed !important;
+        top: 2.5vh !important;
+        left: 2.5vw !important;
+        width: 95vw !important;
+        height: 95vh !important;
+        max-width: 95vw !important;
+        max-height: 95vh !important;
+        margin: 0 !important;
+        border-radius: var(--border-radius) !important;
+        z-index: 1001 !important;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.3) !important;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container fade-in">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
@@ -21,7 +40,12 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Date</th>
+                            <th>
+                                Date Range
+                                <input type="text" id="header-filter-date" class="form-control form-control-sm mt-1"
+                                    placeholder="Select range..." readonly
+                                    style="background: var(--bg-secondary); cursor: pointer;">
+                            </th>
                             <th>
                                 Project
                                 <select id="header-filter-project" class="form-control form-control-sm mt-1"
@@ -62,10 +86,15 @@
 
 <!-- Add Purchase Modal -->
 <div id="add-purchase-modal" class="modal">
-    <div class="modal-content" style="max-width: 700px;">
+    <div class="modal-content modal-full">
         <div class="modal-header">
-            <h3 id="purchase-modal-title">Add Purchase Order</h3>
-            <span class="close" onclick="closeModal('add-purchase-modal')">&times;</span>
+            <div class="flex align-center gap-2">
+                <button class="btn btn-secondary" onclick="closeModal('add-purchase-modal')"
+                    style="padding: 0.5rem 1rem;">
+                    ← Back
+                </button>
+                <h3 id="purchase-modal-title" style="margin: 0;">Add Purchase Order</h3>
+            </div>
         </div>
         <div class="modal-body">
             <form id="purchase-form">
@@ -74,14 +103,16 @@
                 <div class="grid grid-2">
                     <div class="form-group">
                         <label class="form-label">Project *</label>
-                        <select id="purchase-project" class="form-control" required>
+                        <select id="purchase-project" class="form-control" required
+                            data-placeholder="-- Select Project --">
                             <option value="">-- Select Project --</option>
                         </select>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label">Vendor *</label>
-                        <select id="purchase-vendor" class="form-control" required>
+                        <select id="purchase-vendor" class="form-control" required
+                            data-placeholder="-- Select Vendor --">
                             <option value="">-- Select Vendor --</option>
                         </select>
                     </div>
@@ -89,7 +120,8 @@
 
                 <div class="form-group">
                     <label class="form-label">Material Category *</label>
-                    <select id="purchase-category" class="form-control" onchange="updateItemDropdown()" required>
+                    <select id="purchase-category" class="form-control" onchange="updateItemDropdown()" required
+                        data-placeholder="-- Select Category --">
                         <option value="">-- Select Category --</option>
                     </select>
                     <small class="text-secondary">Specify the type of material being purchased</small>
@@ -109,7 +141,8 @@
 
                 <div class="form-group">
                     <label class="form-label">Payment Type *</label>
-                    <select id="purchase-type" class="form-control" required>
+                    <select id="purchase-type" class="form-control" required data-placeholder="-- Select Type --">
+                        <option value="">-- Select Type --</option>
                         <option value="CASH">Cash</option>
                         <option value="CREDIT">Credit</option>
                     </select>
@@ -122,14 +155,15 @@
                 <h4>Items</h4>
                 <div id="items-container">
                     <div class="purchase-item mb-2"
-                        style="display: grid; grid-template-columns: 1.5fr 0.8fr 0.8fr 1fr 1fr auto; gap: 0.5rem; align-items: center;">
+                        style="display: grid; grid-template-columns: 1.5fr 1fr 0.8fr 0.8fr 1fr 1fr auto; gap: 0.5rem; align-items: center;">
                         <select class="form-control item-name" onchange="autoFillUnit(this)" required>
                             <option value="">-- Select Item --</option>
                         </select>
-                        <!-- datalist removed -->
+                        <input type="text" class="form-control item-brand" placeholder="Brand (e.g. ACC)">
                         <input type="number" class="form-control item-quantity" placeholder="Qty" required min="0"
                             step="0.01">
-                        <input type="text" class="form-control item-unit" placeholder="Unit">
+                        <input type="text" class="form-control item-unit" placeholder="Unit" readonly tabindex="-1"
+                            style="background-color: var(--bg-secondary);">
                         <input type="number" class="form-control item-price" placeholder="Unit Price" required min="0"
                             step="0.01">
                         <input type="text" class="form-control item-total" placeholder="Total" readonly>
@@ -153,7 +187,9 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
     let purchases = [];
     let allPurchases = []; // Store all purchases for filtering
@@ -161,7 +197,7 @@
     let vendors = [];
 
     let masterCategories = [];
-    let currentItemOptions = '<option value="">-- Select Item --</option>';
+    let currentItemOptions = '<option value="" data-placeholder="-- Select Item --">-- Select Item --</option>';
 
     async function loadData() {
         try {
@@ -197,7 +233,10 @@
             vendors = await safeJson(vendorsRes);
             masterCategories = await safeJson(categoriesRes);
 
-            console.log('Loaded Categories:', masterCategories); // JSON Debug
+            console.log('Categories Response:', masterCategories);
+            const materialCats = masterCategories.filter(c => c.type === 'MATERIAL');
+            console.log('Filtered Material Categories:', materialCats);
+
             if (masterCategories.length === 0) {
                 console.warn('No Master Categories found!');
                 showNotification('Warning: No material categories found. Please contact admin.', 'error');
@@ -227,6 +266,8 @@
             document.getElementById('header-filter-category').innerHTML = '<option value="">All Categories</option>' +
                 uniqueCategories.map(c => `<option value="${c}">${c}</option>`).join('');
 
+            initDateRangePicker('#header-filter-date', filterPurchases);
+
             renderPurchases();
         } catch (error) {
             console.error('Error loading data:', error);
@@ -238,15 +279,46 @@
         const projectId = document.getElementById('header-filter-project').value;
         const vendorId = document.getElementById('header-filter-vendor').value;
         const category = document.getElementById('header-filter-category').value;
+        const dateRangeStr = document.getElementById('header-filter-date').value;
+
+        let dateFrom = null;
+        let dateTo = null;
+
+        if (dateRangeStr && dateRangeStr.includes(' to ')) {
+            [dateFrom, dateTo] = dateRangeStr.split(' to ');
+        } else if (dateRangeStr) {
+            dateFrom = dateTo = dateRangeStr;
+        }
 
         purchases = allPurchases.filter(p => {
             const matchProject = !projectId || p.project_id === projectId;
             const matchVendor = !vendorId || p.vendor_id === vendorId;
             const matchCategory = !category || p.category === category;
-            return matchProject && matchVendor && matchCategory;
+
+            let matchDate = true;
+            if (dateFrom && p.invoice_date < dateFrom) matchDate = false;
+            if (dateTo && p.invoice_date > dateTo) matchDate = false;
+
+            return matchProject && matchVendor && matchCategory && matchDate;
         });
 
         renderPurchases();
+    }
+
+    // Helper for payment badges
+    // Helper for payment badges
+    function getPaymentBadgeHTML(mode) {
+        let badgeClass = 'status-secondary'; // Default gray
+
+        if (mode === 'CASH') {
+            badgeClass = 'status-completed'; // Green
+        } else if (mode === 'BANK' || mode === 'UPI') {
+            badgeClass = 'status-active'; // Blue
+        } else if (mode === 'CREDIT') {
+            badgeClass = 'status-on_hold'; // Orange/Yellow
+        }
+
+        return `<span class="status-badge ${badgeClass}">${mode}</span>`;
     }
 
     function renderPurchases() {
@@ -268,7 +340,7 @@
                 <td><span class="badge">${p.category || 'N/A'}</span></td>
                 <td><strong>${p.invoice_number}</strong></td>
                 <td><strong>${formatCurrency(p.total_amount)}</strong></td>
-                <td><span class="badge">${p.payment_type}</span></td>
+                <td>${getPaymentBadgeHTML(p.payment_type)}</td>
                 <td style="white-space: nowrap;">
                     <button class="btn btn-sm btn-primary" onclick="editPurchase('${p.expense_id}')" style="margin-right: 0.5rem;">Edit</button>
                     <button class="btn btn-sm btn-danger" onclick="deletePurchase('${p.expense_id}')">Delete</button>
@@ -280,27 +352,46 @@
 
     function addItem() {
         const container = document.getElementById('items-container');
-        const itemHtml = `
-        <div class="purchase-item mb-2" style="display: grid; grid-template-columns: 1.5fr 0.8fr 0.8fr 1fr 1fr auto; gap: 0.5rem; align-items: center;">
-            <select class="form-control item-name" onchange="autoFillUnit(this)" required>
+
+        // Create element explicitly
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'purchase-item mb-2';
+        itemDiv.style.cssText = 'display: grid; grid-template-columns: 1.5fr 1fr 0.8fr 0.8fr 1fr 1fr auto; gap: 0.5rem; align-items: center;';
+
+        itemDiv.innerHTML = `
+            <select class="form-control item-name" onchange="autoFillUnit(this)" required data-placeholder="-- Select Item --">
                 ${currentItemOptions}
             </select>
-            <input type="number" class="form-control item-quantity" placeholder="Qty" required min="0" step="0.01">
-            <input type="text" class="form-control item-unit" placeholder="Unit">
-            <input type="number" class="form-control item-price" placeholder="Unit Price" required min="0" step="0.01">
-            <input type="text" class="form-control item-total" placeholder="Total" readonly>
+            <input type="text" class="form-control item-brand" placeholder="Brand">
+            <input type="text" class="form-control item-quantity amount-input" placeholder="Qty" required>
+            <input type="text" class="form-control item-unit" placeholder="Unit" readonly tabindex="-1" style="background-color: var(--bg-secondary);">
+            <input type="text" class="form-control item-price amount-input" placeholder="Unit Price" required>
+            <input type="text" class="form-control item-total amount-input" placeholder="Total" readonly>
             <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)" style="padding: 0.5rem; min-width: 40px;">−</button>
-        </div>
-    `;
-        container.insertAdjacentHTML('beforeend', itemHtml);
+        `;
+
+        container.appendChild(itemDiv);
+
         attachItemCalculators();
+
+        // Initialize Tom Select
+        const newSelect = itemDiv.querySelector('.item-name');
+        if (newSelect) {
+            new TomSelect(newSelect, {
+                plugins: ['dropdown_input'],
+                sortField: { field: "text", direction: "asc" },
+                dropdownParent: 'body',
+                create: false,
+                maxOptions: null
+            });
+        }
     }
 
     function updateItemDropdown() {
         const categoryName = document.getElementById('purchase-category').value;
         const selectedCategory = masterCategories.find(c => c.name === categoryName);
 
-        let optionsHtml = '<option value="">-- Select Item --</option>';
+        let optionsHtml = '<option value="" data-placeholder="-- Select Item --">-- Select Item --</option>';
         if (selectedCategory && selectedCategory.subcategories) {
             selectedCategory.subcategories.forEach(item => {
                 optionsHtml += `<option value="${item.name}" data-unit="${item.default_unit || ''}">${item.name} ${item.default_unit ? '(' + item.default_unit + ')' : ''}</option>`;
@@ -308,12 +399,35 @@
         }
         currentItemOptions = optionsHtml;
 
-        // Update existing dropdowns
+        // Restore values selection logic is tricky with TomSelect sync.
+        // The original code was: 
+        /*
         document.querySelectorAll('.item-name').forEach(select => {
             const currentVal = select.value;
             select.innerHTML = currentItemOptions;
             select.value = currentVal;
         });
+        */
+
+        // Let's reimplement preserving values
+        // Let's reimplement preserving values
+        const selects = document.querySelectorAll('.item-name');
+
+        selects.forEach(select => {
+            const currentVal = select.value; // Get current value from underlying select (TomSelect updates it)
+
+            // Destroy existing instance to force clean re-render
+            if (select.tomselect) {
+                select.tomselect.destroy();
+            }
+
+            // Update options in the original select
+            select.innerHTML = currentItemOptions;
+            select.value = currentVal; // Restore value
+        });
+
+        // Initialize fresh Tom Select using global helper for consistency
+        initSearchableDropdowns('.item-name');
     }
 
     function autoFillUnit(selectElement) {
@@ -348,8 +462,8 @@
             const total = item.querySelector('.item-total');
 
             const calculate = () => {
-                const itemTotal = (parseFloat(qty.value) || 0) * (parseFloat(price.value) || 0);
-                total.value = itemTotal.toFixed(2);
+                const itemTotal = (parseAmount(qty.value) || 0) * (parseAmount(price.value) || 0);
+                total.value = formatNumber(itemTotal);
                 calculateGrandTotal();
             };
 
@@ -363,7 +477,7 @@
     function calculateGrandTotal() {
         let grandTotal = 0;
         document.querySelectorAll('.item-total').forEach(input => {
-            grandTotal += parseFloat(input.value) || 0;
+            grandTotal += parseAmount(input.value) || 0;
         });
         document.getElementById('purchase-total').value = formatCurrency(grandTotal);
     }
@@ -374,13 +488,15 @@
         const items = [];
         document.querySelectorAll('.purchase-item').forEach(item => {
             const name = item.querySelector('.item-name').value;
-            const quantity = parseFloat(item.querySelector('.item-quantity').value);
+            const brand = item.querySelector('.item-brand').value;
+            const quantity = parseAmount(item.querySelector('.item-quantity').value);
             const unit = item.querySelector('.item-unit').value || 'Unit';
-            const price = parseFloat(item.querySelector('.item-price').value);
+            const price = parseAmount(item.querySelector('.item-price').value);
 
             if (name && quantity && price) {
                 items.push({
                     item_name: name,
+                    brand: brand,
                     quantity: quantity,
                     measuring_unit: unit,
                     unit_price: price,
@@ -472,6 +588,12 @@
             document.getElementById('purchase-date').value = expense.expense_date;
             document.getElementById('purchase-type').value = expense.payment_mode;
 
+            // Sync main form dropdowns
+            ['purchase-project', 'purchase-vendor', 'purchase-category', 'purchase-type'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.tomselect) el.tomselect.sync();
+            });
+
             // Clear and populate items
             // Clear and populate items
             const container = document.getElementById('items-container');
@@ -482,14 +604,15 @@
                 // We need to add items one by one and populate them
                 expense.items.forEach(item => {
                     const itemHtml = `
-                    <div class="purchase-item mb-2" style="display: grid; grid-template-columns: 1.5fr 0.8fr 0.8fr 1fr 1fr auto; gap: 0.5rem; align-items: center;">
-                        <select class="form-control item-name" onchange="autoFillUnit(this)" required>
+                    <div class="purchase-item mb-2" style="display: grid; grid-template-columns: 1.5fr 1fr 0.8fr 0.8fr 1fr 1fr auto; gap: 0.5rem; align-items: center;">
+                        <select class="form-control item-name" onchange="autoFillUnit(this)" required data-placeholder="-- Select Item --">
                             ${currentItemOptions}
                         </select>
-                        <input type="number" class="form-control item-quantity" placeholder="Qty" required min="0" step="0.01" value="${item.quantity || ''}">
-                        <input type="text" class="form-control item-unit" placeholder="Unit" value="${item.measuring_unit || ''}">
-                        <input type="number" class="form-control item-price" placeholder="Unit Price" required min="0" step="0.01" value="${item.unit_price || ''}">
-                        <input type="text" class="form-control item-total" placeholder="Total" readonly value="${item.total_price || ''}">
+                        <input type="text" class="form-control item-brand" placeholder="Brand" value="${item.brand || ''}">
+                        <input type="text" class="form-control item-quantity amount-input" placeholder="Qty" required value="${formatNumber(item.quantity) || ''}">
+                        <input type="text" class="form-control item-unit" placeholder="Unit" readonly tabindex="-1" style="background-color: var(--bg-secondary);" value="${item.measuring_unit || ''}">
+                        <input type="text" class="form-control item-price amount-input" placeholder="Unit Price" required value="${formatNumber(item.unit_price) || ''}">
+                        <input type="text" class="form-control item-total amount-input" placeholder="Total" readonly value="${formatNumber(item.total_price) || ''}">
                         <button type="button" class="btn btn-sm btn-danger" onclick="removeItem(this)" style="padding: 0.5rem; min-width: 40px;">−</button>
                     </div>
                     `;
@@ -502,6 +625,9 @@
                         select.value = item.item_name || '';
                     }
                 });
+
+                // Initialize Tom Select for all added items
+                initSearchableDropdowns('.item-name');
             } else {
                 // Add default empty item if no items
                 addItem();
@@ -541,8 +667,8 @@
                 showNotification('Error deleting purchase', 'error');
             }
         } catch (error) {
-            console.error('Error:', error);
-            showNotification('Error deleting purchase', 'error');
+            console.error('Error loading purchase:', error);
+            showNotification(`Error loading purchase data: ${error.message}`, 'error');
         }
     }
 
@@ -552,15 +678,34 @@
         document.getElementById('purchase-modal-title').textContent = 'Add Purchase';
         document.getElementById('purchase-date').value = new Date().toISOString().split('T')[0];
         document.getElementById('items-container').innerHTML = ''; // Clear items
-        addItem(); // Add one empty item
 
-        // Reset category dropdown
-        document.getElementById('purchase-category').value = "";
+        const categorySelect = document.getElementById('purchase-category');
+        categorySelect.value = "";
 
-        // This will clear the datalists because category is empty
+        const projectSelect = document.getElementById('purchase-project');
+        projectSelect.value = "";
+        const vendorSelect = document.getElementById('purchase-vendor');
+        vendorSelect.value = "";
+        const paymentTypeSelect = document.getElementById('purchase-type');
+        paymentTypeSelect.value = "CREDIT";
+
+        openModal('add-purchase-modal'); // Open modal FIRST so elements are visible
+
+        // Sync dropdowns
+        [categorySelect, projectSelect, vendorSelect, paymentTypeSelect].forEach(select => {
+            if (select && select.tomselect) {
+                select.tomselect.sync();
+            }
+        });
+
+        // Update item options
         updateItemDropdown();
 
-        openModal('add-purchase-modal');
+        // Add first item by simulating click on the button (since manual click is confirmed working)
+        setTimeout(() => {
+            const addButton = document.querySelector('button[onclick="addItem()"]');
+            if (addButton) addButton.click();
+        }, 300);
     }
 
     // Export purchases to Excel
@@ -586,6 +731,18 @@
     document.getElementById('purchase-date').value = new Date().toISOString().split('T')[0];
 
     attachItemCalculators();
-    loadData();
+    async function checkUrlParams() {
+        const params = new URLSearchParams(window.location.search);
+        const editId = params.get('edit_id');
+        if (editId) {
+            await editPurchase(editId);
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+
+    loadData().then(() => {
+        checkUrlParams();
+    });
 </script>
 {% endblock %}

@@ -36,6 +36,7 @@ class ExpenseItem(models.Model):
     measuring_unit = models.CharField(max_length=20, default='Unit')
     unit_price = models.DecimalField(max_digits=15, decimal_places=2)
     total_price = models.DecimalField(max_digits=15, decimal_places=2)
+    brand = models.CharField(max_length=100, blank=True, null=True)
 
     class Meta:
         db_table = 'expense_item'

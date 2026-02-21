@@ -148,52 +148,79 @@ def get_master_categories(request):
 
 def create_master_category(request):
     import json
-    data = json.loads(request.body)
+    from django.db import IntegrityError, transaction
     
-    if MasterCategory.objects.filter(name=data['name']).exists():
-        return JsonResponse({'error': 'Category already exists'}, status=400)
+    try:
+        data = json.loads(request.body)
         
-    category = MasterCategory.objects.create(
-        name=data['name'],
-        type=data['type'],
-        is_active=True
-    )
-    
-    from .models import SubCategory # Import here to avoid circular
-    for item in data.get('subcategories', []):
-        SubCategory.objects.create(
-            parent_category=category,
-            name=item['name'],
-            default_unit=item.get('default_unit')
-        )
-        
-    return JsonResponse({'message': 'Category created', 'id': str(category.category_id)}, status=201)
+        if not data.get('name'):
+            return JsonResponse({'error': 'Category name is required'}, status=400)
+            
+        if MasterCategory.objects.filter(name=data['name']).exists():
+            return JsonResponse({'error': 'Category with this name already exists'}, status=400)
+            
+        with transaction.atomic():
+            category = MasterCategory.objects.create(
+                name=data['name'],
+                type=data.get('type', 'MATERIAL'),
+                is_active=True
+            )
+            
+            from .models import SubCategory
+            for item in data.get('subcategories', []):
+                if item.get('name'):
+                    SubCategory.objects.create(
+                        parent_category=category,
+                        name=item['name'],
+                        default_unit=item.get('default_unit')
+                    )
+                
+        return JsonResponse({'message': 'Category created', 'id': str(category.category_id)}, status=201)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except IntegrityError as e:
+        return JsonResponse({'error': f'Database error: {str(e)}'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 def update_master_category(request, category_id):
     import json
+    from django.db import IntegrityError, transaction
+    
     try:
         category = MasterCategory.objects.get(category_id=category_id)
+        data = json.loads(request.body)
+        
+        new_name = data.get('name', category.name)
+        if new_name != category.name and MasterCategory.objects.filter(name=new_name).exists():
+            return JsonResponse({'error': 'Another category with this name already exists'}, status=400)
+
+        with transaction.atomic():
+            category.name = new_name
+            category.type = data.get('type', category.type)
+            category.save()
+            
+            if 'subcategories' in data:
+                # Clear existing
+                category.subcategories.all().delete()
+                from .models import SubCategory
+                for item in data['subcategories']:
+                    if item.get('name'):
+                        SubCategory.objects.create(
+                            parent_category=category,
+                            name=item['name'],
+                            default_unit=item.get('default_unit')
+                        )
+                    
+        return JsonResponse({'message': 'Category updated'})
     except MasterCategory.DoesNotExist:
         return JsonResponse({'error': 'Category not found'}, status=404)
-
-    data = json.loads(request.body)
-    
-    category.name = data.get('name', category.name)
-    category.type = data.get('type', category.type)
-    category.save()
-    
-    if 'subcategories' in data:
-        # Clear existing
-        category.subcategories.all().delete()
-        from .models import SubCategory
-        for item in data['subcategories']:
-            SubCategory.objects.create(
-                parent_category=category,
-                name=item['name'],
-                default_unit=item.get('default_unit')
-            )
-            
-    return JsonResponse({'message': 'Category updated'})
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except IntegrityError as e:
+        return JsonResponse({'error': f'Database error: {str(e)}'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 def delete_master_category(request, category_id):
     try:
@@ -351,12 +378,16 @@ def get_project_payment_details(request, project_id):
             })
             total_purchases_amount += expense.amount
         else:
+            # Regular Expense: Subcategory is stored in ExpenseItem line
+            first_item = expense.items.first()
+            subcategory = first_item.item_name if first_item else ""
+            
             expenses_list.append({
                 'expense_id': str(expense.expense_id),
-                'expense_type': expense.expense_type,  # Added for chart filtering
+                'expense_type': expense.expense_type,
                 'expense_date': expense.expense_date.isoformat(),
                 'category': expense.category,
-                'subcategory': getattr(expense, 'subcategory', ''),
+                'subcategory': subcategory,
                 'amount': float(expense.amount),
                 'payment_mode': expense.payment_mode,
                 'description': expense.description
@@ -703,6 +734,7 @@ def daily_cash_balance(request):
             transactions.append({
                 'date': cp.payment_date.isoformat(),
                 'type': 'client_payment',
+                'id': str(cp.client_payment_id), # Added ID
                 'amount': float(cp.amount),
                 'payment_mode': cp.payment_mode,
                 'project_name': cp.project.name,
@@ -712,25 +744,49 @@ def daily_cash_balance(request):
             
         for exp in period_expenses:
              # Include CREDIT expenses in list but mark them
+             # Prepare items list if it's a material purchase
+            items_data = []
+            if exp.expense_type == 'Material Purchase':
+                for item in exp.items.all():
+                    items_data.append({
+                        'item_name': item.item_name,
+                        'quantity': float(item.quantity),
+                        'measuring_unit': item.measuring_unit,
+                        'unit_price': float(item.unit_price),
+                        'total_price': float(item.total_price)
+                    })
+
+            # Get subcategory from items for regular expenses
+            subcategory = ""
+            if exp.expense_type == 'Regular Expense':
+                first_item = exp.items.first()
+                subcategory = first_item.item_name if first_item else ""
+
             transactions.append({
                 'date': exp.expense_date.isoformat(),
                 'type': 'expense',
+                'expense_type': exp.expense_type,
+                'id': str(exp.expense_id),
                 'amount': float(exp.amount),
                 'payment_mode': exp.payment_mode,
                 'project_name': exp.project.name,
                 'category': exp.category,
-                'subcategory': getattr(exp, 'subcategory', ''), # Handle missing field gracefully
-                'description': exp.description
+                'subcategory': subcategory,
+                'description': exp.description,
+                'items': items_data # Added items
             })
             
         for pay in period_payments:
             transactions.append({
                 'date': pay.payment_date.isoformat(),
                 'type': 'vendor_payment',
+                'id': str(pay.payment_id), # Added ID
                 'amount': float(pay.amount),
                 'payment_mode': pay.payment_mode,
                 'project_name': pay.project.name,
-                'vendor_name': pay.vendor.name
+                'vendor_name': pay.vendor.name,
+                'invoice_number': pay.expense.invoice_number if pay.expense else None,
+                'category': pay.expense.category if pay.expense else None
             })
             
         # Sort by date desc

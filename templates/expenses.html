@@ -2,6 +2,25 @@
 
 {% block title %}Expenses{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Force full-screen for the details modal */
+    .modal-full {
+        position: fixed !important;
+        top: 2.5vh !important;
+        left: 2.5vw !important;
+        width: 95vw !important;
+        height: 95vh !important;
+        max-width: 95vw !important;
+        max-height: 95vh !important;
+        margin: 0 !important;
+        border-radius: var(--border-radius) !important;
+        z-index: 1001 !important;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.3) !important;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container fade-in">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
@@ -22,9 +41,10 @@
                     <thead>
                         <tr>
                             <th>
-                                Date
-                                <input type="date" id="header-filter-date" class="form-control form-control-sm mt-1"
-                                    onchange="filterExpenses()" style="width: 100%;">
+                                Date Range
+                                <input type="text" id="header-filter-date" class="form-control form-control-sm mt-1"
+                                    placeholder="Select range..." readonly
+                                    style="background: var(--bg-secondary); cursor: pointer;">
                             </th>
                             <th>
                                 Project
@@ -42,6 +62,7 @@
                             </th>
                             <th>Amount</th>
                             <th>Payment Mode</th>
+                            <th>Subcategory</th>
                             <th>Description</th>
                             <th>Actions</th>
                         </tr>
@@ -59,10 +80,15 @@
 
 <!-- Add Expense Modal -->
 <div id="add-expense-modal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content modal-full">
         <div class="modal-header">
-            <h3 id="expense-modal-title">Add Expense</h3>
-            <span class="close" onclick="closeModal('add-expense-modal')">&times;</span>
+            <div class="flex align-center gap-2">
+                <button class="btn btn-secondary" onclick="closeModal('add-expense-modal')"
+                    style="padding: 0.5rem 1rem;">
+                    ← Back
+                </button>
+                <h3 id="expense-modal-title" style="margin: 0;">Add Expense</h3>
+            </div>
         </div>
         <div class="modal-body">
             <form id="expense-form">
@@ -70,7 +96,7 @@
                 <input type="hidden" id="expense-id" value="">
                 <div class="form-group">
                     <label class="form-label">Project *</label>
-                    <select id="expense-project" class="form-control" required>
+                    <select id="expense-project" class="form-control" required data-placeholder="-- Select Project --">
                         <option value="">-- Select Project --</option>
                     </select>
                 </div>
@@ -79,7 +105,7 @@
                     <div class="form-group">
                         <label class="form-label">Category *</label>
                         <select id="expense-category" class="form-control" onchange="updateDescriptionSuggestions()"
-                            required>
+                            required data-placeholder="-- Select Category --">
                             <option value="">-- Select Category --</option>
                         </select>
                     </div>
@@ -87,13 +113,14 @@
 
                 <div class="form-group">
                     <label class="form-label">Amount *</label>
-                    <input type="number" id="expense-amount" class="form-control" required min="0" step="0.01">
+                    <input type="text" id="expense-amount" class="form-control amount-input" required placeholder="0">
                 </div>
 
                 <div class="grid grid-2">
                     <div class="form-group">
                         <label class="form-label">Payment Mode *</label>
-                        <select id="expense-mode" class="form-control" required>
+                        <select id="expense-mode" class="form-control" required data-placeholder="-- Select Mode --">
+                            <option value="">-- Select Mode --</option>
                             <option value="CASH">Cash</option>
                             <option value="BANK">Bank</option>
                             <option value="UPI">UPI</option>
@@ -107,10 +134,17 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Description (Sub-Category)</label>
-                    <select id="expense-description" class="form-control" required>
-                        <option value="">-- Select Description --</option>
+                    <label class="form-label">Sub-Category *</label>
+                    <select id="expense-subcategory" class="form-control" required
+                        data-placeholder="-- Select Sub-Category --">
+                        <option value="">-- Select Sub-Category --</option>
                     </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Description (General Notes)</label>
+                    <textarea id="expense-description" class="form-control"
+                        placeholder="Add any specific details here..." rows="2"></textarea>
                 </div>
 
                 <div class="flex gap-2">
@@ -122,7 +156,9 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
     let expenses = [];
     let allExpenses = []; // Store all expenses for filtering
@@ -157,6 +193,9 @@
                 projects.map(p => `<option value="${p.project_id}">${p.name}</option>`).join('');
 
             populateExpenseFilters();
+
+            initDateRangePicker('#header-filter-date', filterExpenses);
+
             renderExpenses();
         } catch (error) {
             console.error('Error loading data:', error);
@@ -174,16 +213,45 @@
     function filterExpenses() {
         const projectId = document.getElementById('header-filter-project').value;
         const category = document.getElementById('header-filter-category').value;
+        const dateRangeStr = document.getElementById('header-filter-date').value;
+
+        let dateFrom = null;
+        let dateTo = null;
+
+        if (dateRangeStr && dateRangeStr.includes(' to ')) {
+            [dateFrom, dateTo] = dateRangeStr.split(' to ');
+        } else if (dateRangeStr) {
+            dateFrom = dateTo = dateRangeStr;
+        }
 
         const filteredExpenses = allExpenses.filter(e => {
             const matchProject = !projectId || e.project_id === projectId;
             const matchCategory = !category || e.category === category;
-            const matchDate = !document.getElementById('header-filter-date').value || e.expense_date === document.getElementById('header-filter-date').value;
+
+            let matchDate = true;
+            if (dateFrom && e.expense_date < dateFrom) matchDate = false;
+            if (dateTo && e.expense_date > dateTo) matchDate = false;
+
             return matchProject && matchCategory && matchDate;
         });
 
         expenses = filteredExpenses;
         renderExpenses();
+    }
+
+    // Helper for payment badges
+    function getPaymentBadgeHTML(mode) {
+        let badgeClass = 'status-secondary'; // Default gray
+
+        if (mode === 'CASH') {
+            badgeClass = 'status-completed'; // Green
+        } else if (mode === 'BANK' || mode === 'UPI') {
+            badgeClass = 'status-active'; // Blue
+        } else if (mode === 'CREDIT') {
+            badgeClass = 'status-on_hold'; // Orange/Yellow
+        }
+
+        return `<span class="status-badge ${badgeClass}">${mode}</span>`;
     }
 
     function renderExpenses() {
@@ -202,7 +270,8 @@
                 <td>${project ? project.name : 'Unknown'}</td>
                 <td>${e.category}</td>
                 <td><strong>${formatCurrency(e.amount)}</strong></td>
-                <td><span class="badge">${e.payment_mode}</span></td>
+                <td>${getPaymentBadgeHTML(e.payment_mode)}</td>
+                <td>${e.subcategory || '-'}</td>
                 <td>${e.description || '-'}</td>
                 <td style="white-space: nowrap;">
                     <button class="btn btn-sm btn-primary" onclick="editExpense('${e.expense_id}')" style="margin-right: 0.5rem;">Edit</button>
@@ -222,7 +291,8 @@
         const data = {
             project_id: document.getElementById('expense-project').value,
             category: document.getElementById('expense-category').value,
-            amount: parseFloat(document.getElementById('expense-amount').value),
+            subcategory: document.getElementById('expense-subcategory').value,
+            amount: parseAmount(document.getElementById('expense-amount').value),
             payment_mode: document.getElementById('expense-mode').value,
             expense_date: document.getElementById('expense-date').value,
             description: document.getElementById('expense-description').value
@@ -282,10 +352,17 @@
             document.getElementById('expense-project').value = expense.project_id;
             document.getElementById('expense-category').value = expense.category;
             updateDescriptionSuggestions(); // Populate dropdown
+            document.getElementById('expense-subcategory').value = expense.subcategory || '';
             document.getElementById('expense-description').value = expense.description || '';
-            document.getElementById('expense-amount').value = expense.amount;
+            document.getElementById('expense-amount').value = formatNumber(expense.amount);
             document.getElementById('expense-mode').value = expense.payment_mode;
             document.getElementById('expense-date').value = expense.expense_date;
+
+            // Sync all Tom Selects
+            ['expense-project', 'expense-category', 'expense-mode', 'expense-subcategory'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.tomselect) el.tomselect.sync();
+            });
 
             // Open modal
             openModal('add-expense-modal');
@@ -322,9 +399,9 @@
     function updateDescriptionSuggestions() {
         const categoryName = document.getElementById('expense-category').value;
         const selectedCategory = masterCategories.find(c => c.name === categoryName);
-        const select = document.getElementById('expense-description');
+        const select = document.getElementById('expense-subcategory');
 
-        select.innerHTML = '<option value="">-- Select Description --</option>';
+        select.innerHTML = '<option value="">-- Select Sub-Category --</option>';
 
         if (selectedCategory && selectedCategory.subcategories && selectedCategory.subcategories.length > 0) {
             selectedCategory.subcategories.forEach(item => {
@@ -334,6 +411,13 @@
                 select.appendChild(option);
             });
         }
+
+        // Re-initialize or sync Tom Select
+        if (select.tomselect) {
+            select.tomselect.sync();
+        } else {
+            initSearchableDropdowns('#expense-subcategory');
+        }
     }
 
     function prepareAddExpense() {
@@ -342,8 +426,25 @@
         document.getElementById('expense-modal-title').textContent = 'Add Expense';
         document.getElementById('expense-date').value = new Date().toISOString().split('T')[0];
 
-        document.getElementById('expense-category').value = "";
-        document.getElementById('expense-description').innerHTML = '<option value="">-- Select Description --</option>';
+        const categorySelect = document.getElementById('expense-category');
+        categorySelect.value = "";
+
+        const projectSelect = document.getElementById('expense-project');
+        projectSelect.value = "";
+
+        const modeSelect = document.getElementById('expense-mode');
+        modeSelect.value = "CASH"; // Default
+
+        const subcategorySelect = document.getElementById('expense-subcategory');
+        subcategorySelect.innerHTML = '<option value="">-- Select Sub-Category --</option>';
+
+        const descriptionField = document.getElementById('expense-description');
+        descriptionField.value = "";
+
+        // Sync all Tom Selects
+        [categorySelect, projectSelect, modeSelect, subcategorySelect].forEach(el => {
+            if (el && el.tomselect) el.tomselect.sync();
+        });
 
         openModal('add-expense-modal');
     }
@@ -369,6 +470,18 @@
     // Set today's date as default
     document.getElementById('expense-date').value = new Date().toISOString().split('T')[0];
 
-    loadData();
+    async function checkUrlParams() {
+        const params = new URLSearchParams(window.location.search);
+        const editId = params.get('edit_id');
+        if (editId) {
+            await editExpense(editId);
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+
+    loadData().then(() => {
+        checkUrlParams();
+    });
 </script>
 {% endblock %}

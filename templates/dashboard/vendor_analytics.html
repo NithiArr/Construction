@@ -2,6 +2,24 @@
 
 {% block title %}Vendor Analytics{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Force full-screen for the details modal */
+    .modal-full {
+        position: fixed !important;
+        top: 2.5vh !important;
+        left: 2.5vw !important;
+        width: 95vw !important;
+        height: 95vh !important;
+        max-width: 95vw !important;
+        max-height: 95vh !important;
+        margin: 0 !important;
+        border-radius: var(--border-radius) !important;
+        z-index: 1001 !important;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.3) !important;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <style>
@@ -71,10 +89,14 @@
 
     <!-- Vendor Details Modal -->
     <div id="vendor-modal" class="modal">
-        <div class="modal-content" style="max-width: 1200px;">
+        <div class="modal-content modal-full">
             <div class="modal-header">
-                <h3 id="vendor-modal-title">Vendor Details</h3>
-                <button class="modal-close" onclick="closeVendorModal()">&times;</button>
+                <div class="flex align-center gap-2">
+                    <button class="btn btn-secondary" onclick="closeVendorModal()" style="padding: 0.5rem 1rem;">
+                        ← Back
+                    </button>
+                    <h3 id="vendor-modal-title" style="margin: 0;">Vendor Details</h3>
+                </div>
             </div>
             <div class="modal-body">
                 <!-- Project Filter -->
@@ -135,6 +157,10 @@
             const response = await fetch("{% url 'api_vendor_summary' %}");
             vendorsData = await response.json();
             populateVendorFilter();
+
+            // Initialize Tom Select
+            initSearchableDropdowns();
+
             renderVendorTable(vendorsData);
         } catch (error) {
             console.error('Error loading vendors:', error);
@@ -187,6 +213,9 @@
             const projects = [...new Set(allPurchases.map(p => p.project_name))].sort();
             projectFilter.innerHTML = '<option value="">All Projects</option>' +
                 projects.map(proj => `<option value="${proj}">${proj}</option>`).join('');
+
+            // Initialize Tom Select for filter
+            initSearchableDropdowns('#project-filter');
 
             // Calculate and render project-wise balance
             renderProjectBalance(allPurchases);
@@ -257,6 +286,21 @@
         `;
     }
 
+    // Helper for payment badges
+    function getPaymentBadgeHTML(mode) {
+        let badgeClass = 'status-secondary'; // Default gray
+
+        if (mode === 'CASH') {
+            badgeClass = 'status-completed'; // Green
+        } else if (mode === 'BANK' || mode === 'UPI') {
+            badgeClass = 'status-active'; // Blue
+        } else if (mode === 'CREDIT') {
+            badgeClass = 'status-on_hold'; // Orange/Yellow
+        }
+
+        return `<span class="status-badge ${badgeClass}">${mode}</span>`;
+    }
+
     // Render purchase history table
     function renderPurchaseHistory(purchases) {
         const tbody = document.getElementById('purchase-history-tbody');
@@ -276,7 +320,7 @@
                     <td>${p.invoice_number || '-'}</td>
                     <td><span class="badge">${p.category || 'N/A'}</span></td>
                     <td>${formatCurrency(p.amount)}</td>
-                    <td><span class="badge badge-${p.payment_mode === 'CASH' ? 'success' : p.payment_mode === 'CREDIT' ? 'warning' : 'info'}">${p.payment_mode}</span></td>
+                    <td>${getPaymentBadgeHTML(p.payment_mode)}</td>
                 </tr>
             `;
 
@@ -383,7 +427,7 @@
                                                 <td style="padding: 0.5rem;">${p.quantity} ${p.unit}</td>
                                                 <td style="padding: 0.5rem;">${formatCurrency(p.unit_price)}</td>
                                                 <td style="padding: 0.5rem;"><strong>${formatCurrency(p.total_price)}</strong></td>
-                                                <td style="padding: 0.5rem;"><span class="status-badge ${p.payment_mode === 'CREDIT' ? 'status-on_hold' : 'status-completed'}">${p.payment_mode}</span></td>
+                                                <td style="padding: 0.5rem;">${getPaymentBadgeHTML(p.payment_mode)}</td>
                                             </tr>
                                         `).join('')}
                                     </tbody>
