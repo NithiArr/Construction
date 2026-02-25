@@ -392,6 +392,8 @@ def create_payment(request):
     except (Project.DoesNotExist, Vendor.DoesNotExist):
         return JsonResponse({'error': 'Invalid project or vendor'}, status=404)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=400)
 
 def delete_payment(request, payment_id):
@@ -448,6 +450,8 @@ def create_client_payment(request):
     except Project.DoesNotExist:
         return JsonResponse({'error': 'Project not found'}, status=404)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JsonResponse({'error': str(e)}, status=400)
 
 def delete_client_payment(request, client_payment_id):
