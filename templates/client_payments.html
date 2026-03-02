@@ -84,7 +84,7 @@
                     style="padding: 0.5rem 1rem;">
                     ← Back
                 </button>
-                <h3 style="margin: 0;">Record Client Payment</h3>
+                <h3 id="cp-modal-title" style="margin: 0;">Record Client Payment</h3>
             </div>
         </div>
         <div class="modal-body">
@@ -148,6 +148,7 @@
     let clientPayments = [];
     let allClientPayments = []; // Store all client payments for filtering
     let projects = [];
+    let editingClientPaymentId = null; // null = Add mode, set = Edit mode
 
     async function loadData() {
         try {
@@ -236,11 +237,32 @@
                 <td>${cp.reference_number || '-'}</td>
                 <td>${cp.remarks || '-'}</td>
                 <td>
+                    <button class="btn btn-sm btn-secondary" onclick="openEditClientPayment('${cp.client_payment_id}')">Edit</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteClientPayment('${cp.client_payment_id}')">Delete</button>
                 </td>
             </tr>
         `;
         }).join('');
+    }
+
+    async function openEditClientPayment(id) {
+        editingClientPaymentId = id;
+        document.getElementById('cp-modal-title').textContent = 'Edit Client Payment';
+        try {
+            const url = "{% url 'api_client_payments_list' %}/" + id;
+            const res = await fetch(url);
+            if (!res.ok) { showNotification('Failed to load payment', 'error'); return; }
+            const cp = await res.json();
+            document.getElementById('client-payment-project').value = cp.project_id;
+            document.getElementById('client-payment-amount').value = cp.amount;
+            document.getElementById('client-payment-mode').value = cp.payment_mode;
+            document.getElementById('client-payment-date').value = cp.payment_date;
+            document.getElementById('client-payment-ref').value = cp.reference_number || '';
+            document.getElementById('client-payment-remarks').value = cp.remarks || '';
+        } catch (err) {
+            showNotification('Error loading payment', 'error'); return;
+        }
+        openModal('add-client-payment-modal');
     }
 
     document.getElementById('client-payment-form').addEventListener('submit', async (e) => {
@@ -256,8 +278,16 @@
         };
 
         try {
-            const response = await fetch("{% url 'api_client_payments_list' %}", {
-                method: 'POST',
+            let url, method;
+            if (editingClientPaymentId) {
+                url = "{% url 'api_client_payments_list' %}/" + editingClientPaymentId;
+                method = 'PUT';
+            } else {
+                url = "{% url 'api_client_payments_list' %}";
+                method = 'POST';
+            }
+            const response = await fetch(url, {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
@@ -266,16 +296,17 @@
             });
 
             if (response.ok) {
-                showNotification('Client payment recorded successfully', 'success');
+                showNotification(editingClientPaymentId ? 'Client payment updated successfully' : 'Client payment recorded successfully', 'success');
                 closeModal('add-client-payment-modal');
                 resetForm('client-payment-form');
+                editingClientPaymentId = null;
                 loadData();
             } else {
-                showNotification('Error recording payment', 'error');
+                showNotification('Error saving payment', 'error');
             }
         } catch (error) {
             console.error('Error:', error);
-            showNotification('Error recording payment', 'error');
+            showNotification('Error saving payment', 'error');
         }
     });
 
@@ -306,6 +337,8 @@
     document.getElementById('client-payment-date').value = new Date().toISOString().split('T')[0];
 
     function prepareAddClientPayment() {
+        editingClientPaymentId = null;
+        document.getElementById('cp-modal-title').textContent = 'Record Client Payment';
         resetForm('client-payment-form');
         document.getElementById('client-payment-date').value = new Date().toISOString().split('T')[0];
         openModal('add-client-payment-modal');

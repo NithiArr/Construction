@@ -12,9 +12,8 @@
         <div class="card-body">
             <div class="grid grid-3" style="gap: 1rem;">
                 <div class="form-group">
-                    <label class="form-label">Select Project</label>
-                    <select id="project-select" class="form-control">
-                        <option value="">-- Select Project --</option>
+                    <label class="form-label">Select Project(s)</label>
+                    <select id="project-select" class="form-control" multiple>
                     </select>
                 </div>
 
@@ -159,20 +158,55 @@
             const projects = await response.json();
 
             const select = document.getElementById('project-select');
-            select.innerHTML = '<option value="">-- Select Project --</option>' +
+            // Populate options: All Projects first, then individual
+            select.innerHTML =
                 '<option value="all">🏢 All Projects</option>' +
                 projects.map(p => `<option value="${p.project_id}">${p.name}</option>`).join('');
 
-            initSearchableDropdowns('#project-select'); // Specifically init THIS dropdown
-
-            // If we have projects, auto-select first one if desired or just let it stay
-            if (projects.length > 0) {
-                // select.value = projects[0].project_id;
-                // loadDailyCash();
+            // Init TomSelect with checkbox_options for multi-select
+            let _busy = false;
+            if (!select.tomselect) {
+                const ts = new TomSelect(select, {
+                    plugins: ['checkbox_options', 'dropdown_input'],
+                    create: false,
+                    maxItems: null,
+                    allowEmptyOption: false,
+                    dropdownParent: 'body',
+                    placeholder: '-- Select project(s) --',
+                    onItemAdd: function (value) {
+                        if (_busy) return;
+                        const ts = this;
+                        setTimeout(() => {
+                            if (value === 'all') {
+                                // Replace whole selection with just 'All Projects'
+                                // _busy prevents this setValue from re-triggering onItemAdd
+                                _busy = true;
+                                ts.setValue(['all']); // no silent flag → checkboxes stay in sync
+                                _busy = false;
+                            } else {
+                                // Individual chosen — drop 'All Projects' if it was ticked
+                                const current = ts.getValue();
+                                if (current.includes('all')) ts.removeItem('all', true);
+                            }
+                        }, 0);
+                    }
+                });
+            } else {
+                select.tomselect.sync();
             }
         } catch (error) {
             console.error('Error loading projects:', error);
         }
+    }
+
+    // Get selected project IDs as a comma-separated string (or 'all')
+    function getSelectedProjects() {
+        const ts = document.getElementById('project-select').tomselect;
+        if (!ts) return null;
+        const vals = ts.getValue(); // array
+        if (!vals || vals.length === 0) return null;
+        if (vals.includes('all')) return 'all';
+        return vals.join(',');
     }
 
     // Helper function to format date as YYYY-MM-DD without timezone issues
@@ -247,12 +281,12 @@
 
     // Explicitly validate and load
     function validateAndLoad() {
-        const projectId = document.getElementById('project-select').value;
+        const projectIds = getSelectedProjects();
         const fromDate = document.getElementById('from-date').value;
         const toDate = document.getElementById('to-date').value;
 
-        if (!projectId) {
-            alert('Please select a project first.');
+        if (!projectIds) {
+            alert('Please select at least one project.');
             return;
         }
         if (!fromDate || !toDate) {
@@ -264,11 +298,11 @@
 
     // Load cash balance for date range
     async function loadDailyCash() {
-        const projectId = document.getElementById('project-select').value;
+        const projectIds = getSelectedProjects();
         const fromDate = document.getElementById('from-date').value;
         const toDate = document.getElementById('to-date').value;
 
-        if (!projectId || !fromDate || !toDate) {
+        if (!projectIds || !fromDate || !toDate) {
             // No alert here, validation will be handled by the button click
             return;
         }
@@ -280,7 +314,7 @@
 
         try {
             const url = "{% url 'api_daily_cash_balance' %}";
-            const response = await fetch(`${url}?project_id=${projectId}&from_date=${fromDate}&to_date=${toDate}`);
+            const response = await fetch(`${url}?project_ids=${projectIds}&from_date=${fromDate}&to_date=${toDate}`);
             const data = await response.json();
 
             // Update balance tracker
@@ -586,16 +620,16 @@
     }
 
     function exportExcel() {
-        const projectId = document.getElementById('project-select').value;
+        const projectIds = getSelectedProjects();
         const fromDate = document.getElementById('from-date').value;
         const toDate = document.getElementById('to-date').value;
 
-        if (!projectId || !fromDate || !toDate) {
+        if (!projectIds || !fromDate || !toDate) {
             alert('Please load data first');
             return;
         }
 
-        window.open(`/export/balance-excel?project_id=${projectId}&from_date=${fromDate}&to_date=${toDate}`, '_blank');
+        window.open(`/export/balance-excel?project_ids=${projectIds}&from_date=${fromDate}&to_date=${toDate}`, '_blank');
     }
 
     // Format currency

@@ -726,7 +726,8 @@ def get_vendor_outstanding(request, vendor_id):
 @login_required
 def daily_cash_balance(request):
     try:
-        project_id = request.GET.get('project_id')
+        # Accept either comma-separated project_ids (new) or single project_id (legacy)
+        project_ids_str = request.GET.get('project_ids') or request.GET.get('project_id')
         from_date_str = request.GET.get('from_date')
         to_date_str = request.GET.get('to_date')
         
@@ -736,15 +737,21 @@ def daily_cash_balance(request):
         from_date = datetime.fromisoformat(from_date_str).date()
         to_date = datetime.fromisoformat(to_date_str).date()
         
+        # Build project filter list
+        project_id_list = None  # None = all projects
+        if project_ids_str and project_ids_str != 'all':
+            project_id_list = [pid.strip() for pid in project_ids_str.split(',') if pid.strip()]
+        
         # Base queries
         expenses_query = Expense.objects.filter(company=request.user.company)
         payments_query = Payment.objects.filter(company=request.user.company)
         client_payments_query = ClientPayment.objects.filter(company=request.user.company)
         
-        if project_id and project_id != 'all':
-            expenses_query = expenses_query.filter(project_id=project_id)
-            payments_query = payments_query.filter(project_id=project_id)
-            client_payments_query = client_payments_query.filter(project_id=project_id)
+        if project_id_list:
+            expenses_query = expenses_query.filter(project_id__in=project_id_list)
+            payments_query = payments_query.filter(project_id__in=project_id_list)
+            client_payments_query = client_payments_query.filter(project_id__in=project_id_list)
+
             
         # 1. Opening Balance (Before from_date)
         # Inflows

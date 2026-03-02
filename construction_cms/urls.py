@@ -16,10 +16,12 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from core import export_utils
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
     path('', include('finance.urls')),
     path('', include('users.urls')),
+    path('export/balance-excel', export_utils.export_cash_balance_excel, name='export_cash_balance_excel'),
 ]

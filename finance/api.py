@@ -350,9 +350,52 @@ def payments_list(request):
 
 @login_required
 def payment_detail(request, payment_id):
-    if request.method == 'DELETE':
+    if request.method == 'GET':
+        return get_payment_detail(request, payment_id)
+    elif request.method == 'PUT':
+        return update_payment(request, payment_id)
+    elif request.method == 'DELETE':
         return delete_payment(request, payment_id)
     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+def get_payment_detail(request, payment_id):
+    try:
+        p = Payment.objects.get(payment_id=payment_id, company=request.user.company)
+        data = {
+            'payment_id': str(p.payment_id),
+            'payment_date': p.payment_date.isoformat(),
+            'project_id': str(p.project.project_id),
+            'project_name': p.project.name,
+            'vendor_id': str(p.vendor.vendor_id),
+            'vendor_name': p.vendor.name,
+            'amount': float(p.amount),
+            'payment_mode': p.payment_mode,
+            'purchase_invoice': p.expense.invoice_number if p.expense else None
+        }
+        return JsonResponse(data)
+    except Payment.DoesNotExist:
+        return JsonResponse({'error': 'Payment not found'}, status=404)
+
+def update_payment(request, payment_id):
+    try:
+        p = Payment.objects.get(payment_id=payment_id, company=request.user.company)
+        data = json.loads(request.body)
+        if 'vendor_id' in data:
+            p.vendor = Vendor.objects.get(vendor_id=data['vendor_id'], company=request.user.company)
+        if 'project_id' in data:
+            p.project = Project.objects.get(project_id=data['project_id'], company=request.user.company)
+        if 'amount' in data:
+            p.amount = data['amount']
+        if 'payment_mode' in data:
+            p.payment_mode = data['payment_mode']
+        if 'payment_date' in data:
+            p.payment_date = datetime.fromisoformat(data['payment_date']).date()
+        p.save()
+        return JsonResponse({'message': 'Payment updated'})
+    except Payment.DoesNotExist:
+        return JsonResponse({'error': 'Payment not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
 
 def get_payments(request):
     payments = Payment.objects.filter(company=request.user.company).order_by('-payment_date')
@@ -414,9 +457,53 @@ def client_payments_list(request):
 
 @login_required
 def client_payment_detail(request, client_payment_id):
-    if request.method == 'DELETE':
-         return delete_client_payment(request, client_payment_id)
+    if request.method == 'GET':
+        return get_client_payment_detail(request, client_payment_id)
+    elif request.method == 'PUT':
+        return update_client_payment(request, client_payment_id)
+    elif request.method == 'DELETE':
+        return delete_client_payment(request, client_payment_id)
     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+def get_client_payment_detail(request, client_payment_id):
+    try:
+        cp = ClientPayment.objects.get(client_payment_id=client_payment_id, company=request.user.company)
+        data = {
+            'client_payment_id': str(cp.client_payment_id),
+            'payment_date': cp.payment_date.isoformat(),
+            'project_id': str(cp.project.project_id),
+            'project_name': cp.project.name,
+            'amount': float(cp.amount),
+            'payment_mode': cp.payment_mode,
+            'reference_number': cp.reference_number,
+            'remarks': cp.remarks
+        }
+        return JsonResponse(data)
+    except ClientPayment.DoesNotExist:
+        return JsonResponse({'error': 'Client payment not found'}, status=404)
+
+def update_client_payment(request, client_payment_id):
+    try:
+        cp = ClientPayment.objects.get(client_payment_id=client_payment_id, company=request.user.company)
+        data = json.loads(request.body)
+        if 'project_id' in data:
+            cp.project = Project.objects.get(project_id=data['project_id'], company=request.user.company)
+        if 'amount' in data:
+            cp.amount = data['amount']
+        if 'payment_mode' in data:
+            cp.payment_mode = data['payment_mode']
+        if 'payment_date' in data:
+            cp.payment_date = datetime.fromisoformat(data['payment_date']).date()
+        if 'reference_number' in data:
+            cp.reference_number = data['reference_number'] or None
+        if 'remarks' in data:
+            cp.remarks = data['remarks'] or None
+        cp.save()
+        return JsonResponse({'message': 'Client payment updated'})
+    except ClientPayment.DoesNotExist:
+        return JsonResponse({'error': 'Client payment not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
 
 def get_client_payments(request):
     payments = ClientPayment.objects.filter(company=request.user.company).order_by('-payment_date')
