@@ -10,6 +10,19 @@ from django.contrib.auth.decorators import login_required
 from core.models import Project
 from finance.models import Expense, Payment, ClientPayment, ExpenseItem
 from django.db.models import Sum
+from functools import wraps
+from django.http import HttpResponseForbidden
+
+def require_export_role(view_func):
+    """Ensure only ADMIN or MANAGER can export data."""
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return HttpResponseForbidden("Authentication required")
+        if request.user.role not in ('ADMIN', 'MANAGER'):
+            return HttpResponseForbidden("Permission denied. Employees cannot export data.")
+        return view_func(request, *args, **kwargs)
+    return _wrapped
 
 
 def apply_header_style(cell):
@@ -48,6 +61,7 @@ def auto_adjust_column_width(ws):
 
 
 @login_required
+@require_export_role
 def export_project_to_excel(request, project_id):
     """Export complete project data to Excel with multiple sheets"""
     try:
@@ -299,6 +313,7 @@ def export_project_to_excel(request, project_id):
 
 
 @login_required
+@require_export_role
 def export_expenses_to_excel(request):
     """Export regular expenses to Excel with optional filtering"""
     
@@ -397,6 +412,7 @@ def export_expenses_to_excel(request):
 
 
 @login_required
+@require_export_role
 def export_purchases_to_excel(request):
     """Export material purchases with optional filtering"""
     
@@ -527,6 +543,7 @@ def export_purchases_to_excel(request):
 
 
 @login_required
+@require_export_role
 def export_vendor_payments_to_excel(request):
     """Export vendor payments to Excel with filtering"""
     
@@ -622,6 +639,7 @@ def export_vendor_payments_to_excel(request):
 
 
 @login_required
+@require_export_role
 def export_cash_balance_excel(request):
     """
     Export Cash Balance report to Excel.
@@ -967,6 +985,7 @@ def export_cash_balance_excel(request):
 
 
 @login_required
+@require_export_role
 def export_client_payments_to_excel(request):
     """Export client payments to Excel with filtering"""
     

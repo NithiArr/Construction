@@ -57,13 +57,11 @@ class User(AbstractUser):
     password = models.CharField(_('password'), max_length=255)
     
     ROLE_CHOICES = [
-        ('OWNER', 'Owner'),
         ('ADMIN', 'Admin'),
         ('MANAGER', 'Manager'),
-        ('ACCOUNTANT', 'Accountant'),
-        ('ENGINEER', 'Engineer'),
+        ('EMPLOYEE', 'Employee'),
     ]
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='ENGINEER')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='EMPLOYEE')
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['name']

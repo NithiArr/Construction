@@ -7,6 +7,22 @@ from core.models import Project, Vendor
 import json
 from django.utils import timezone
 from datetime import datetime
+from functools import wraps
+
+
+def require_role(*allowed_roles):
+    """API-level role guard — returns 403 JSON if the user's role is not allowed."""
+    def decorator(view_func):
+        @wraps(view_func)
+        def _wrapped(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                return JsonResponse({'error': 'Authentication required'}, status=401)
+            if request.user.role not in allowed_roles:
+                return JsonResponse({'error': 'Permission denied'}, status=403)
+            return view_func(request, *args, **kwargs)
+        return _wrapped
+    return decorator
+
 
 # ================= PURCHASE API (Material Expenses) =================
 
@@ -16,8 +32,22 @@ def purchases_list(request):
         return create_purchase(request)
     return get_purchases(request)
 
+@login_required
+def purchase_detail(request, purchase_id):
+    if request.method == 'GET':
+        return get_purchase_detail(request, purchase_id)
+    elif request.method == 'PUT':
+        return update_purchase(request, purchase_id)
+    elif request.method == 'DELETE':
+        if request.user.role not in ('ADMIN', 'MANAGER'):
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        return delete_purchase(request, purchase_id)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
 @transaction.atomic
 def create_purchase(request):
+    if request.user.role not in ('ADMIN', 'MANAGER', 'EMPLOYEE'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
     try:
         data = json.loads(request.body)
         project = Project.objects.get(project_id=data['project_id'], company=request.user.company)
@@ -49,16 +79,6 @@ def create_purchase(request):
         return JsonResponse({'message': 'Purchase created', 'purchase_id': str(purchase.expense_id)}, status=201)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
-
-@login_required
-def purchase_detail(request, purchase_id):
-    if request.method == 'GET':
-        return get_purchase_detail(request, purchase_id)
-    elif request.method == 'PUT':
-        return update_purchase(request, purchase_id)
-    elif request.method == 'DELETE':
-        return delete_purchase(request, purchase_id)
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 def get_purchase_detail(request, purchase_id):
     try:
@@ -93,6 +113,8 @@ def get_purchase_detail(request, purchase_id):
 
 @transaction.atomic
 def update_purchase(request, purchase_id):
+    if request.user.role not in ('ADMIN', 'MANAGER', 'EMPLOYEE'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
     try:
         p = Expense.objects.get(expense_id=purchase_id, company=request.user.company, expense_type='Material Purchase')
         data = json.loads(request.body)
@@ -161,6 +183,8 @@ def expense_detail(request, expense_id):
     elif request.method == 'PUT':
         return update_expense(request, expense_id)
     elif request.method == 'DELETE':
+        if request.user.role not in ('ADMIN', 'MANAGER'):
+            return JsonResponse({'error': 'Permission denied'}, status=403)
         return delete_expense(request, expense_id)
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
@@ -225,6 +249,8 @@ def get_expense_detail(request, expense_id):
 
 @transaction.atomic
 def update_expense(request, expense_id):
+    if request.user.role not in ('ADMIN', 'MANAGER', 'EMPLOYEE'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
     try:
         e = Expense.objects.get(expense_id=expense_id, company=request.user.company, expense_type='Regular Expense')
         data = json.loads(request.body)
@@ -291,6 +317,8 @@ def get_expenses(request):
     return JsonResponse(data, safe=False)
 
 def create_expense(request):
+    if request.user.role not in ('ADMIN', 'MANAGER', 'EMPLOYEE'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
     try:
         data = json.loads(request.body)
         print(f"Received expense data: {data}")  # Debug log
@@ -343,12 +371,14 @@ def delete_expense(request, expense_id):
 # ================= PAYMENT API (Vendor Payments) =================
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def payments_list(request):
     if request.method == 'POST':
         return create_payment(request)
     return get_payments(request)
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def payment_detail(request, payment_id):
     if request.method == 'GET':
         return get_payment_detail(request, payment_id)
@@ -450,12 +480,14 @@ def delete_payment(request, payment_id):
 # ================= CLIENT PAYMENT API =================
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def client_payments_list(request):
     if request.method == 'POST':
         return create_client_payment(request)
     return get_client_payments(request)
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def client_payment_detail(request, client_payment_id):
     if request.method == 'GET':
         return get_client_payment_detail(request, client_payment_id)

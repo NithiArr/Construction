@@ -5,7 +5,7 @@
 {% block content %}
 <div class="container fade-in">
     <div class="mb-3">
-        <h1>💳 Payment Mode Analysis</h1>
+        <h1><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="inline-icon"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" /></svg> Payment Mode Analysis</h1>
         <p class="text-secondary">Cash, Bank & UPI position tracking</p>
     </div>
 
@@ -13,7 +13,7 @@
     <div class="grid grid-3 mb-3">
         <div class="card">
             <div class="card-body">
-                <div class="kpi-label">💵 Cash Position</div>
+                <div class="kpi-label"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="inline-icon"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6 9 12.75l4.286-4.286a11.948 11.948 0 0 1 4.306 6.43l.776 2.898m0 0 3.182-5.514m-3.182 5.514-5.514-3.182" /></svg> Cash Position</div>
                 <div class="kpi-value" id="cash-balance">₹0</div>
                 <div class="kpi-sublabel">
                     <span id="cash-received">Received: ₹0</span> |
@@ -24,7 +24,7 @@
 
         <div class="card">
             <div class="card-body">
-                <div class="kpi-label">🏦 Bank Position</div>
+                <div class="kpi-label"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="inline-icon"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.315 48.315 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z" /></svg> Bank Position</div>
                 <div class="kpi-value" id="bank-balance">₹0</div>
                 <div class="kpi-sublabel">
                     <span id="bank-received">Received: ₹0</span> |
@@ -35,7 +35,7 @@
 
         <div class="card">
             <div class="card-body">
-                <div class="kpi-label">📱 UPI Position</div>
+                <div class="kpi-label"><svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="inline-icon"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" /></svg> UPI Position</div>
                 <div class="kpi-value" id="upi-balance">₹0</div>
                 <div class="kpi-sublabel">
                     <span id="upi-received">Received: ₹0</span> |
@@ -223,9 +223,9 @@
         const tbody = document.getElementById('breakdown-tbody');
 
         const modes = [
-            { name: 'CASH', icon: '💵', data: paymentData.cash },
-            { name: 'BANK', icon: '🏦', data: paymentData.bank },
-            { name: 'UPI', icon: '📱', data: paymentData.upi }
+            { name: 'CASH', icon: '', data: paymentData.cash },
+            { name: 'BANK', icon: '', data: paymentData.bank },
+            { name: 'UPI', icon: '', data: paymentData.upi }
         ];
 
         tbody.innerHTML = modes.map(mode => {

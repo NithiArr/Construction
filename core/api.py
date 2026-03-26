@@ -4,10 +4,26 @@ from django.db.models import Sum, Count
 from django.contrib.auth.decorators import login_required
 from .models import Project, Vendor, MasterCategory
 from finance.models import Expense, Payment, ClientPayment, ExpenseItem
+from functools import wraps
 
 from decimal import Decimal
 
+
+def require_role(*allowed_roles):
+    """API-level role guard — returns 403 JSON if the user's role is not in allowed_roles."""
+    def decorator(view_func):
+        @wraps(view_func)
+        def _wrapped(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                return JsonResponse({'error': 'Authentication required'}, status=401)
+            if request.user.role not in allowed_roles:
+                return JsonResponse({'error': 'Permission denied'}, status=403)
+            return view_func(request, *args, **kwargs)
+        return _wrapped
+    return decorator
+
 @login_required
+@require_role('ADMIN')
 def owner_kpis(request):
     status_filter = request.GET.get('status')
     
@@ -73,6 +89,7 @@ def owner_kpis(request):
     return JsonResponse(data)
 
 @login_required
+@require_role('ADMIN')
 def project_financial_table(request):
     projects = Project.objects.all()
     data = []
@@ -109,12 +126,16 @@ def project_financial_table(request):
     return JsonResponse(data, safe=False)
 
 @login_required
+@require_role('ADMIN', 'MANAGER', 'EMPLOYEE')
 def master_categories_list(request):
     if request.method == 'POST':
+        if request.user.role not in ('ADMIN', 'MANAGER'):
+            return JsonResponse({'error': 'Permission denied'}, status=403)
         return create_master_category(request)
     return get_master_categories(request)
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def master_categories_detail(request, category_id):
     if request.method == 'PUT':
         return update_master_category(request, category_id)
@@ -233,12 +254,16 @@ def delete_master_category(request, category_id):
 # ================= PROEJCTS API =================
 
 @login_required
+@require_role('ADMIN', 'MANAGER', 'EMPLOYEE')
 def projects_list(request):
     if request.method == 'POST':
+        if request.user.role != 'ADMIN':
+            return JsonResponse({'error': 'Permission denied'}, status=403)
         return create_project(request)
     return get_projects(request)
 
 @login_required
+@require_role('ADMIN')
 def project_detail(request, project_id):
     if request.method == 'GET':
         return get_project(request, project_id)
@@ -334,6 +359,7 @@ def delete_project(request, project_id):
         return JsonResponse({'error': 'Project not found'}, status=404)
 
 @login_required
+@require_role('ADMIN')
 def get_project_payment_details(request, project_id):
     try:
         project = Project.objects.get(project_id=project_id, company=request.user.company)
@@ -470,12 +496,16 @@ def get_project_payment_details(request, project_id):
 # ================= VENDORS API =================
 
 @login_required
+@require_role('ADMIN', 'MANAGER', 'EMPLOYEE')
 def vendors_list(request):
     if request.method == 'POST':
+        if request.user.role not in ('ADMIN', 'MANAGER'):
+            return JsonResponse({'error': 'Permission denied'}, status=403)
         return create_vendor(request)
     return get_vendors(request)
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def vendor_detail(request, vendor_id):
     if request.method == 'PUT':
         return update_vendor(request, vendor_id)
@@ -534,6 +564,7 @@ def delete_vendor(request, vendor_id):
         return JsonResponse({'error': 'Vendor not found'}, status=404)
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def get_vendor_material_summary(request, vendor_id):
     try:
         vendor = Vendor.objects.get(vendor_id=vendor_id, company=request.user.company)
@@ -586,6 +617,7 @@ def get_vendor_material_summary(request, vendor_id):
     return JsonResponse(result, safe=False)
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def get_vendor_summary(request):
     vendors = Vendor.objects.filter(company=request.user.company)
     data = []
@@ -614,6 +646,7 @@ def get_vendor_summary(request):
     return JsonResponse(data, safe=False)
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def get_vendor_purchase_history(request, vendor_id):
     try:
         vendor = Vendor.objects.get(vendor_id=vendor_id, company=request.user.company)
@@ -673,6 +706,7 @@ def get_vendor_purchase_history(request, vendor_id):
 
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def get_vendor_outstanding(request, vendor_id):
     """
     Returns outstanding balance for a vendor (company-scoped).
@@ -724,6 +758,7 @@ def get_vendor_outstanding(request, vendor_id):
 
 
 @login_required
+@require_role('ADMIN', 'MANAGER')
 def daily_cash_balance(request):
     try:
         # Accept either comma-separated project_ids (new) or single project_id (legacy)
