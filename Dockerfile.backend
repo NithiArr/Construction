@@ -18,4 +18,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # collectstatic runs at container startup (see docker-compose) to fill shared volume for Nginx
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "construction_cms.wsgi:application"]
+CMD sh -c "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 construction_cms.wsgi:application"
